@@ -18,7 +18,7 @@ WOMAN, MAN = "Mara", "Ren"  # tracer-bullet twins; real twins arrive with D1/D4
 
 
 class StartSimulation(BaseModel):
-    scenario: Literal["breakout", "unrequited", "timeout"] = "breakout"
+    scenario: Literal["breakout", "unrequited", "timeout", "excluded"] = "breakout"
     max_days: int = 10
     seed: int = 0
 
@@ -29,6 +29,9 @@ def serialize(result) -> dict:
         "day": result.day,
         "pair": list(result.pair) if result.pair else None,
         "unrequited": [{"day": a.day, "twin": a.twin, "target": a.target} for a in result.unrequited],
+        "scorable": result.scorable,
+        "breach": ({"day": result.breach.day, "twin": result.breach.twin, "phrase": result.breach.phrase,
+                    "text": result.breach.text} if result.breach else None),
         "standing": result.standing,
         "longing": {who: {n: round(v, 2) for n, v in d.items()} for who, d in result.longing.items()},
         "announcements": [{"day": a.day, "text": a.text} for a in result.announcements],

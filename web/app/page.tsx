@@ -4,7 +4,7 @@ import { useState } from "react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
 
-type Scenario = "breakout" | "unrequited" | "timeout";
+type Scenario = "breakout" | "unrequited" | "timeout" | "excluded";
 
 type SimEvent = { day: number; twin: string; rung: string; target: string | null; say: string };
 
@@ -12,7 +12,8 @@ type Simulation = {
   id: string;
   status: "running" | "done";
   result?: {
-    outcome: "breakout" | "timeout";
+    outcome: "breakout" | "timeout" | "excluded";
+    breach?: { day: number; twin: string; phrase: string } | null;
     day: number;
     pair: [string, string] | null;
     unrequited: { day: number; twin: string; target: string }[];
@@ -23,6 +24,8 @@ type Simulation = {
 function headline(sim: Simulation): string {
   const r = sim.result;
   if (!r) return "Running…";
+  if (r.outcome === "excluded" && r.breach)
+    return `Excluded: ${r.breach.twin} broke immersion on day ${r.breach.day} ("${r.breach.phrase}") — not scored`;
   if (r.outcome === "breakout") return `Breakout on day ${r.day}: ${r.pair?.join(" and ")} crossed the wall together`;
   if (r.unrequited.length > 0) {
     const a = r.unrequited[0];
@@ -70,6 +73,7 @@ export default function Home() {
             <option value="breakout">Breakout</option>
             <option value="unrequited">Unrequited</option>
             <option value="timeout">Timeout</option>
+            <option value="excluded">Excluded (immersion broken)</option>
           </select>
         </label>
         <button onClick={start} disabled={busy}>
