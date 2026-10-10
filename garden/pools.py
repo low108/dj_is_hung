@@ -5,6 +5,7 @@ who were not mutual matches. If the mechanic works, her real matches should rank
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from random import Random
 
@@ -106,3 +107,24 @@ def check_answer_key(ranked: list[str], matched: frozenset[str],
     in_order = credit / len(pairs) if pairs else 0.0
     on_top = bool(pairs) and all(strength[a] > strength[b] for a, b in pairs)
     return AnswerKeyCheck(m, o, on_top, round(in_order, 3))
+
+
+@dataclass(frozen=True)
+class PoolSetup:
+    """Everything a simulation needs about who is in the world: the demo pool or a real woman's pool."""
+
+    twins: tuple[Twin, ...]
+    personas: dict[str, str]
+    woman: str
+    men: list[str]
+    matched: frozenset[str] | None  # the answer key; None for the demo pool
+
+
+def resolve(pool_iid: int | None, dates: Callable[[], pd.DataFrame] = sd.load) -> PoolSetup:
+    """The demo pool when `pool_iid` is None, otherwise that real woman's pool (KeyError if not a woman)."""
+    from . import demo
+
+    if pool_iid is None:
+        return PoolSetup(demo.POOL, demo.PERSONAS, demo.WOMAN, demo.MEN, None)
+    pool = load_pool(dates(), pool_iid)
+    return PoolSetup(pool.twins, pool.personas, pool.woman.alias, pool.men_aliases, pool.matched)

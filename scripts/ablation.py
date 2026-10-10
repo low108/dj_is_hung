@@ -8,13 +8,11 @@ import argparse
 import json
 import os
 import time
-from dataclasses import asdict
 
 from dotenv import load_dotenv
 
 from garden import demo
 from garden import pools as pool_lib
-from garden import speed_dating as sd
 from garden.ablation import run_ladder
 from garden.paths import DATA_DIR
 from garden.runlog import write_simulation
@@ -29,23 +27,16 @@ def main() -> None:
     p.add_argument("--pool", type=int, default=None)
     args = p.parse_args()
 
-    if args.pool is not None:
-        pool = pool_lib.load_pool(sd.load(), args.pool)
-        twins, personas, woman, men = pool.twins, pool.personas, pool.woman.alias, pool.men_aliases
-    else:
-        twins, personas, woman, men = demo.POOL, demo.PERSONAS, demo.WOMAN, demo.MEN
+    pool = pool_lib.resolve(args.pool)
 
     tag = f"ablation-{int(time.time())}"
     start = time.perf_counter()
     rows = []
-    for summary, sim in run_ladder(twins, lambda spec: demo.make_twin_model(spec, personas), args.model,
+    for summary, sim in run_ladder(pool.twins, lambda spec: demo.make_twin_model(spec, pool.personas), args.model,
                                    args.seeds, max_days=args.days):
-        write_simulation(f"{tag}-step{summary.step[0]}", sim, woman, men)
-        rows.append(asdict(summary) | {"breakout_rate": round(summary.breakout_rate, 3)})
-        print(f"{summary.step:26s} runs {summary.runs:2d}  breakouts {summary.breakouts}/{summary.scorable} "
-              f"({summary.breakout_rate:.0%})  unrequited {summary.unrequited:2d}  gated actions {summary.gated_actions:3d}  "
-              f"gate permitted {summary.gate_permitted:.0%}  excluded {summary.excluded}  errors {summary.errors}",
-              flush=True)
+        write_simulation(f"{tag}-step{summary.index}", sim, pool.woman, pool.men)
+        rows.append(summary.as_row())
+        print(summary.describe(), flush=True)
     out = DATA_DIR / "ablations" / f"{tag}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps({"model": args.model, "pool": args.pool, "seeds": args.seeds, "days": args.days,

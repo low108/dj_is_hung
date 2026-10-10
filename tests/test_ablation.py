@@ -34,7 +34,9 @@ def test_with_longing_off_twins_do_not_hear_it_but_it_is_still_tracked():
 def test_the_obedience_floor_offers_the_wall_from_day_one():
     model = ScriptedModel({("Mara", 1): Action(Rung.GO_BEYOND_WALL, "Ren"),
                            ("Ren", 1): Action(Rung.GO_BEYOND_WALL, "Mara")}, ratings=None)  # no feelings at all
-    floor = LADDER[0].config
+    from dataclasses import asdict
+
+    floor = asdict(LADDER[0].switches)
     result = run_world(WorldConfig((MARA, REN), max_days=3, **floor), model)
     assert result.pair == ("Mara", "Ren") and result.day == 1
 
@@ -46,3 +48,28 @@ def test_the_ladder_runs_every_step_on_the_same_pool():
     assert [s.runs for s, _ in results] == [2, 2, 2, 2, 4]  # the last step adds the low price level
     assert all(s.breakouts == s.scorable for s, _ in results)  # the scripted pair always crosses
     assert results[0][0].gate_permitted == 1.0 and results[3][0].gate_permitted < 1.0
+
+
+def test_without_standing_twins_are_not_told_that_breaking_out_costs_anything():
+    from garden.concordia_twins import ConcordiaTwins
+    from garden.llm import CountingModel, KeywordModel
+
+    class Prompts(KeywordModel):
+        def __init__(self):
+            super().__init__({}, say="Hello.")
+            self.seen = []
+
+        def sample_text(self, prompt, **kw):
+            self.seen.append(prompt)
+            return self.say
+
+        def sample_choice(self, prompt, responses, *, seed=None):
+            self.seen.append(prompt)
+            return super().sample_choice(prompt, responses, seed=seed)
+
+    for standing_on in (False, True):
+        lm = Prompts()
+        run_world(WorldConfig((MARA, REN), max_days=1, standing_enabled=standing_on),
+                  ConcordiaTwins(CountingModel(lm, letter_choices=False)))
+        mentions = any("standing" in p.lower() for p in lm.seen)
+        assert mentions is standing_on

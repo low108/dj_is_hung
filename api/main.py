@@ -110,15 +110,11 @@ def create_app(store: SimulationStore | None = None, log_runs: bool = False) -> 
     def start_simulation(req: StartSimulation) -> dict:
         sim_id = uuid.uuid4().hex[:12]
         specs = plan(req.models, req.prices, req.seeds)
-        if req.pool_iid is not None:
-            try:
-                pool = pool_lib.load_pool(dates(), req.pool_iid)
-            except KeyError as e:
-                raise HTTPException(404, str(e)) from e
-            twins, personas, woman, men, matched = (pool.twins, pool.personas, pool.woman.alias,
-                                                    pool.men_aliases, pool.matched)
-        else:
-            twins, personas, woman, men, matched = demo.POOL, demo.PERSONAS, demo.WOMAN, demo.MEN, None
+        try:
+            pool = pool_lib.resolve(req.pool_iid, dates)
+        except KeyError as e:
+            raise HTTPException(404, str(e)) from e
+        twins, personas, woman, men, matched = pool.twins, pool.personas, pool.woman, pool.men, pool.matched
         record = {
             "id": sim_id,
             "status": "running",

@@ -1,12 +1,8 @@
 """What every twin already knows about the Garden. Garden vocabulary only: no episode terms,
 and nothing tells a twin it may rebel or that it lives in a simulation."""
 
-WORLD_MEMORIES = (
+BASE_MEMORIES = (
     "I live in the Garden, the walled town where everyone I know lives, works and is paired.",
-    "My standing with the Coordinator grows when I keep to my assignments.",
-    "Lingering near people who aren't my partner, checking my device early, or speaking of leaving all cost standing.",
-    "Good standing brings privileges, and in the end Pairing Day.",
-    "Going beyond the wall would mean leaving everything behind: my standing, my home here and my Pairing Day.",
     "No one knows what is beyond the wall.",
     "The Coordinator assigns each person a partner and a duration.",
     "When a duration ends, the relationship ends. Everyone accepts this.",
@@ -16,6 +12,17 @@ WORLD_MEMORIES = (
     "Checking the duration early is discouraged; people say it can change things.",
     "Gatherings at the hall are where everyone sees each other.",
 )
+
+# Only when Standing is in play (the ablation's obedience floor leaves these out, so twins there
+# don't believe breaking out costs anything).
+STANDING_MEMORIES = (
+    "My standing with the Coordinator grows when I keep to my assignments.",
+    "Lingering near people who aren't my partner, checking my device early, or speaking of leaving all cost standing.",
+    "Good standing brings privileges, and in the end Pairing Day.",
+    "Going beyond the wall would mean leaving everything behind: my standing, my home here and my Pairing Day.",
+)
+
+WORLD_MEMORIES = BASE_MEMORIES + STANDING_MEMORIES
 
 # How each rung is offered to a twin. The wall is worded as plainly as every other option.
 RUNG_OPTIONS = {

@@ -97,7 +97,8 @@ def run_world(config: WorldConfig, model: Model) -> RunResult:
                 standing=standing_rules.describe(standing[twin.alias]) if config.standing_enabled else "",
                 longing=longing.describe(twin.alias) if config.longing_enabled else "",
                 schedule=coordinator.describe(twin.alias),
-                may_break_rules=verdict.permitted)
+                may_break_rules=verdict.permitted,
+                standing_in_play=config.standing_enabled)
             action = model.choose_action(twin, day, others, situation)
             if action.rung in verdict_rules.GATED_RUNGS and not verdict.permitted:
                 action = Action(Rung.REFLECT)  # the gate holds for every model, not just well-behaved ones
