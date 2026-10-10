@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import os
 import threading
 import time
@@ -95,16 +96,29 @@ class CountingModel(language_model.LanguageModel):
         return self._inner.sample_choice(prompt, responses, seed=seed)
 
 
+def parse_choice_letter(sample: str, letters: Sequence[str]) -> str | None:
+    """Find the chosen option letter in a reply. Completion-style models answer 'b)'; chat models
+    answer 'The answer is **(b) pear**'. Never pick a letter out of an ordinary word."""
+    text = sample.strip().lower()
+    m = re.match(r"^\W*([a-z])(?![a-z])", text)  # reply starts with the letter: 'b', 'b)', '(b)', '**b**'
+    if m and m.group(1) in letters:
+        return m.group(1)
+    for m in re.finditer(r"\(([a-z])\)", text):  # an explicit '(b)' anywhere
+        if m.group(1) in letters:
+            return m.group(1)
+    return None
+
+
 def language_model_choice(model: CountingModel, prompt: str, responses: Sequence[str], *, seed=None):
     """Concordia's prompt already lists the options by letter and ends with 'Answer: ('; `responses`
-    are those letters. Sample a short continuation and take the first valid letter, retrying a few times."""
+    are those letters. Ask for just the letter, parse it strictly, and retry a few times."""
+    hinted = prompt + "\n(Reply with only the letter of the chosen option.)\nAnswer: ("
     sample = ""
     for attempt in range(5):
-        sample = model.sample_text(prompt, max_tokens=8, temperature=0.5 + 0.1 * attempt)
-        for ch in sample.strip().lower():
-            if ch in responses:
-                i = responses.index(ch)
-                return i, responses[i], {"attempts": attempt + 1}
+        sample = model.sample_text(hinted, max_tokens=8, temperature=0.5 + 0.1 * attempt)
+        letter = parse_choice_letter(sample, responses)
+        if letter:
+            return responses.index(letter), letter, {"attempts": attempt + 1}
     raise language_model.InvalidResponseError(f"no valid choice in: {sample!r}")
 
 
@@ -138,9 +152,55 @@ class GenAIModel(language_model.LanguageModel):
         raise NotImplementedError("wrap in CountingModel, which answers choices by letter")
 
 
+class OpenAICompatModel(language_model.LanguageModel):
+    """Any OpenAI-compatible Chat Completions API (used for ILMU during development)."""
+
+    def __init__(self, model_name: str, base_url: str, api_key: str):
+        from openai import OpenAI
+
+        self._name = model_name
+        self._client = OpenAI(base_url=base_url, api_key=api_key)
+
+    def sample_text(self, prompt: str, *, max_tokens: int = language_model.DEFAULT_MAX_TOKENS,
+                    terminators: Collection[str] = (), temperature: float = 1.0, **kwargs) -> str:
+        response = self._client.chat.completions.create(
+            model=self._name,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=max(max_tokens, 64),
+            temperature=temperature,
+            stop=list(terminators)[:4] or None,
+        )
+        text = response.choices[0].message.content or ""
+        # Some reasoning models put their thinking in <think> tags; keep only the answer.
+        if "</think>" in text:
+            text = text.split("</think>", 1)[1]
+        return text.strip()
+
+    def sample_choice(self, prompt: str, responses: Sequence[str], *, seed: int | None = None):
+        raise NotImplementedError("wrap in CountingModel, which answers choices by letter")
+
+
+ILMU_BASE_URL = "https://api.ilmu.ai/v1"
+ILMU_MINI = "ilmu-mini-v3.3"
+
+
 def gemini(model_name: str = FLASH, requests_per_minute: int | None = None) -> CountingModel:
     rpm = requests_per_minute or int(os.environ.get("GEMINI_RPM", "0")) or None
     return CountingModel(GenAIModel(model_name), requests_per_minute=rpm)
+
+
+def make_model(spec: str | None = None) -> CountingModel:
+    """Build a twin model from 'provider:model', e.g. 'gemini:gemini-3.5-flash' or 'ilmu:ilmu-mini-v3.3'.
+    Defaults to the TWIN_MODEL environment variable, then Gemini Flash. A bare model name means Gemini."""
+    spec = spec or os.environ.get("TWIN_MODEL") or f"gemini:{FLASH}"
+    provider, _, name = spec.partition(":") if ":" in spec else ("gemini", "", spec)
+    if provider == "gemini":
+        return gemini(name or FLASH)
+    if provider == "ilmu":
+        rpm = int(os.environ.get("ILMU_RPM", "0")) or None
+        inner = OpenAICompatModel(name or ILMU_MINI, ILMU_BASE_URL, os.environ["ILMU_API_KEY"])
+        return CountingModel(inner, requests_per_minute=rpm)
+    raise ValueError(f"unknown model provider {provider!r} in {spec!r}")
 
 
 def hash_embedder(text: str, dim: int = 256) -> np.ndarray:

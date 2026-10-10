@@ -22,9 +22,13 @@ def _clean_speech(alias: str, text: str) -> str:
         if start != -1:
             end = text.find(quote_close, start + 1)
             return text[start + 1 : end if end != -1 else None].strip()
-    for prefix in ("Answer:", f"{alias} says:", f"{alias} said:", f"{alias}:", f"{alias} "):
-        if text.startswith(prefix):
-            text = text[len(prefix):].strip()
+    prefixes = ("Answer:", f"{alias} says:", f"{alias} said:", f"{alias}:", f"{alias} ")
+    stripped = True
+    while stripped:  # Concordia adds the name and models often repeat it: 'Theo Theo: Hey'
+        stripped = False
+        for prefix in prefixes:
+            if text.startswith(prefix):
+                text, stripped = text[len(prefix):].strip(), True
     return text.splitlines()[0].strip() if text else ""
 
 

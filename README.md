@@ -39,19 +39,25 @@ Open the web app, pick a fake-model scenario and click **Start simulation**.
 make test
 ```
 
-## Real models (Gemini / Gemma)
+## Real models (ILMU for development, Gemini / Gemma for the demo)
 
-Twins run as Concordia agents (`garden/concordia_twins.py`) on the Gemini API. Put your key in `.env` (git-ignored):
+Twins run as Concordia agents (`garden/concordia_twins.py`). `TWIN_MODEL` picks the model as `provider:model`. Put keys in `.env` (git-ignored):
 
 ```
+TWIN_MODEL=ilmu:ilmu-mini-v3.3      # development (ILMU credits, fast, no tight rate limits)
+# TWIN_MODEL=gemini:gemini-3.5-flash  # the submitted demo must use Gemini or Gemma
+ILMU_API_KEY=sk-...
 GEMINI_API_KEY=...
-GEMINI_RPM=5   # only on the free tier: paces requests to 5 per minute per model
+GEMINI_RPM=5   # only on the Gemini free tier: paces requests to 5 per minute per model
 ```
+
+ILMU is reached through its OpenAI-compatible API (`https://api.ilmu.ai/v1`); Gemini and Gemma through the Google Gen AI SDK.
 
 Measure one real run (calls, tokens, model time, and a projection for a 10-day run):
 
 ```bash
-uv run python scripts/measure_run.py --model gemini-3.5-flash-lite --men 2 --days 2
+uv run python scripts/measure_run.py --days 2
+uv run python scripts/measure_run.py --model gemini:gemini-3.5-flash-lite --men 2 --days 2
 ```
 
 The free tier allows about 5 requests per minute and 20 per day per model, which is enough for a small measurement but not for demo-sized simulations. Those need billing enabled on the key's Google Cloud project.

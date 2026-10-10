@@ -1,6 +1,6 @@
 """Run one real simulation and report LLM calls, tokens and time per run (ticket B1).
 
-Usage: uv run python scripts/measure_run.py [--model gemini-3.8-flash] [--men 5] [--days 3]
+Usage: uv run python scripts/measure_run.py [--model ilmu:ilmu-mini-v3.3 | gemini:gemini-3.5-flash] [--men 5] [--days 3]
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 
 from garden import Twin, WorldConfig, run_world
 from garden.concordia_twins import ConcordiaTwins
-from garden.llm import FLASH, gemini
+from garden.llm import make_model
 
 # Placeholder personas until D1 builds twins from the speed-dating data.
 PERSONAS = {
@@ -27,7 +27,7 @@ PERSONAS = {
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--model", default=FLASH)
+    p.add_argument("--model", default=None, help="provider:model; defaults to TWIN_MODEL, then Gemini Flash")
     p.add_argument("--men", type=int, default=5)
     p.add_argument("--days", type=int, default=3)
     p.add_argument("--seed", type=int, default=0)
@@ -35,7 +35,7 @@ def main() -> None:
 
     load_dotenv(".env")
     names = ["Mara", *list(PERSONAS)[1 : 1 + args.men]]
-    lm = gemini(args.model)
+    lm = make_model(args.model)
     model = ConcordiaTwins(lm, {n: PERSONAS[n] for n in names})
 
     start = time.perf_counter()
@@ -49,7 +49,7 @@ def main() -> None:
     per_action_seconds = stats["model_seconds"] / actions
     demo_actions = len(names) * 10  # 10-day demo run
     report = {
-        "model": args.model,
+        "model": args.model or "(TWIN_MODEL or default)",
         "twins": len(names),
         "days_run": result.day,
         "outcome": result.outcome.value,
