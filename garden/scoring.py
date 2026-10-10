@@ -31,6 +31,7 @@ class CandidateScore:
 
 
 def wilson(successes: int, n: int, z: float = Z95) -> tuple[float, float]:
+    """95% Wilson score interval for a proportion; (0, 1) when there is no data."""
     if n == 0:
         return 0.0, 1.0
     p = successes / n
@@ -40,7 +41,8 @@ def wilson(successes: int, n: int, z: float = Z95) -> tuple[float, float]:
 
 
 def score(records: list[RunRecord], woman: str, candidates: list[str]) -> list[CandidateScore]:
-    """Ranked best first: higher price level, then higher breakout rate, then name."""
+    """Ranked best first: higher price level, then the low end of the confidence range (so a steady
+    9/10 beats a lucky 1/1), then name."""
     scorable = [r for r in records if r.result is not None and r.result.scorable]
     scores = []
     for man in candidates:
@@ -50,11 +52,11 @@ def score(records: list[RunRecord], woman: str, candidates: list[str]) -> list[C
             together = sum(1 for r in runs if r.result.pair and set(r.result.pair) == {woman, man})
             by_price[price.value] = (together, len(runs))
         best = next((p for p in reversed(PRICE_ORDER) if by_price[p.value][0] > 0), None)
-        if best is None:
+        if best is None:  # never broke out with him: the range covers every scored run, at any price
             k, n = 0, len(scorable)
         else:
             k, n = by_price[best.value]
         low, high = wilson(k, n)
         scores.append(CandidateScore(man, best, k, n, low, high, by_price))
     rank = {p: i for i, p in enumerate(PRICE_ORDER)}
-    return sorted(scores, key=lambda s: (-(rank[s.price] + 1 if s.price else 0), -s.rate, s.candidate))
+    return sorted(scores, key=lambda s: (-(rank[s.price] + 1 if s.price else 0), -s.ci_low, s.candidate))

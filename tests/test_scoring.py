@@ -74,3 +74,9 @@ def test_the_api_returns_a_ranking_with_price_and_confidence_range():
     assert top["candidate"] == "Ren" and top["price"] == "high"  # the scripted breakout is Mara + Ren
     assert 0 <= top["ci_low"] <= top["ci_high"] <= 1
     assert len(body["ranking"]) == 5
+
+
+def test_a_steady_record_outranks_a_lucky_one_at_the_same_price():
+    records = [rec(0, HIGH, ("Mara", "Kai"))] + [rec(i, HIGH, ("Mara", "Ren")) for i in range(1, 10)] + [rec(10, HIGH)]
+    # Kai 1/11 vs Ren 9/11 at high: Ren first. And a lone 1/1 can't beat 9/10:
+    assert score(records, "Mara", MEN)[0].candidate == "Ren"

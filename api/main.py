@@ -55,12 +55,12 @@ def serialize_simulation(sim: Simulation) -> dict:
     runs = [{"run_id": r.spec.run_id, "model": r.spec.model, "price": r.spec.price.value, "seed": r.spec.seed,
              "wall_seconds": round(r.wall_seconds, 2), "error": r.error,
              "result": serialize(r.result) if r.result else None} for r in sim.records]
-    men = [t.alias for t in demo.POOL if t.alias != demo.WOMAN]
     ranking = [{"candidate": c.candidate, "price": c.price.value if c.price else None, "breakouts": c.breakouts,
                 "runs": c.runs, "ci_low": c.ci_low, "ci_high": c.ci_high,
                 "by_price": {p: list(v) for p, v in c.breakouts_by_price.items()}}
-               for c in score(list(sim.records), demo.WOMAN, men)]
+               for c in score(list(sim.records), demo.WOMAN, demo.MEN)]
     return {"wall_seconds": round(sim.wall_seconds, 2), "runs": runs, "ranking": ranking,
+            "scored_runs": len(sim.scorable),
             "result": runs[0]["result"] if runs else None}  # first run kept for the single-result page
 
 

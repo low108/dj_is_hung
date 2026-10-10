@@ -93,20 +93,20 @@ button:disabled {
   margin-top: 16px;
 }
 
-table {
+.ranking table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.95rem;
 }
 
-th,
-td {
+.ranking th,
+.ranking td {
   text-align: left;
   padding: 8px 6px;
   border-bottom: 1px solid var(--border);
 }
 
-th {
+.ranking th {
   color: var(--muted);
   font-weight: 600;
 }
