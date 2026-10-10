@@ -39,6 +39,24 @@ Open the web app, pick a fake-model scenario and click **Start simulation**.
 make test
 ```
 
+## Data: Columbia Speed Dating
+
+Demo twins are built from the Columbia Speed Dating dataset: 551 participants and 8,378 four-minute dates (2002–2004), with both people's yes/no decisions recorded.
+
+> Fisman, R., Iyengar, S. S., Kamenica, E., & Simonson, I. (2006). Gender Differences in Mate Selection: Evidence from a Speed Dating Experiment. *Quarterly Journal of Economics*, 121(2), 673–697.
+
+The data isn't redistributed here. Download `Speed Dating Data.csv` from [Kaggle](https://www.kaggle.com/annavictoria/speed-dating-experiment) (the release with participant IDs `iid`/`pid`) and save it as `data/raw/speed_dating.csv` (git-ignored). Check the licence on the Kaggle page before any public use.
+
+- Only fields collected **before** the dates reach a twin (`garden/speed_dating.py`, `PRE_DATE_FIELDS`). Decisions, partner ratings and follow-up surveys are the answer key.
+- Every seed memory cites the field it came from. An optional LLM rewrite makes memories sound natural; rewrites with no valid source or with invented numbers are rejected.
+- The dataset has no personality inventory, so every twin uses the same neutral rebelliousness threshold.
+- The data is anonymised; don't attempt to re-identify participants.
+
+```bash
+uv run python scripts/build_twin.py 132          # template memories
+uv run python scripts/build_twin.py 132 --llm    # rewritten by TWIN_MODEL
+```
+
 ## Real models (ILMU for development, Gemini / Gemma for the demo)
 
 Twins run as Concordia agents (`garden/concordia_twins.py`). `TWIN_MODEL` picks the model as `provider:model`. Put keys in `.env` (git-ignored):
