@@ -9,7 +9,8 @@ from random import Random
 from typing import Protocol
 
 from . import standing as standing_rules
-from .engine_types import Action, Attempt, Event, OutcomeKind, Rung, Situation, Twin
+from .engine_types import Action, Attempt, Event, OutcomeKind, Reflection, Rung, Situation, Twin
+from .longing import Longing
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,8 @@ class RunResult:
     unrequited: list[Attempt] = field(default_factory=list)
     events: list[Event] = field(default_factory=list)
     standing: dict[str, int] = field(default_factory=dict)  # at the end of the run
+    longing: dict[str, dict[str, float]] = field(default_factory=dict)  # at the end of the run
+    reflections: list[Reflection] = field(default_factory=list)
 
 
 def run_world(config: WorldConfig, model: Model) -> RunResult:
@@ -41,6 +44,12 @@ def run_world(config: WorldConfig, model: Model) -> RunResult:
     events: list[Event] = []
     unrequited: list[Attempt] = []
     standing = {t.alias: config.standing_start for t in config.twins}
+    longing = Longing()
+    reflections: list[Reflection] = []
+
+    def result(outcome: OutcomeKind, day: int, pair=None) -> RunResult:
+        return RunResult(outcome, day, pair, unrequited, events, standing,
+                         {t.alias: longing.of(t.alias) for t in config.twins}, reflections)
 
     for day in range(1, config.max_days + 1):
         order = list(config.twins)
@@ -49,7 +58,8 @@ def run_world(config: WorldConfig, model: Model) -> RunResult:
         actions: dict[str, Action] = {}
         for twin in order:
             others = tuple(t for t in config.twins if t != twin)
-            situation = Situation(standing=standing_rules.describe(standing[twin.alias]))
+            situation = Situation(standing=standing_rules.describe(standing[twin.alias]),
+                                  longing=longing.describe(twin.alias))
             actions[twin.alias] = action = model.choose_action(twin, day, others, situation)
             if action.rung is Rung.GO_BEYOND_WALL and action.target:
                 crossings[twin.alias] = action.target
@@ -64,11 +74,12 @@ def run_world(config: WorldConfig, model: Model) -> RunResult:
             events.append(Event(day, twin.alias, action.rung, action.target, action.say, before, standing[twin.alias]))
 
         if breakout:
-            return RunResult(OutcomeKind.BREAKOUT, day, breakout, unrequited, events, standing)
+            return result(OutcomeKind.BREAKOUT, day, breakout)
         unrequited += [Attempt(day, a, b) for a, b in crossings.items()]
+        longing.end_of_day(actions)
 
         after_day = getattr(model, "after_day", None)  # models with memory hear what happened today
         if after_day:
-            after_day(day, [e for e in events if e.day == day])
+            reflections.extend(after_day(day, [e for e in events if e.day == day]) or [])
 
-    return RunResult(OutcomeKind.TIMEOUT, config.max_days, None, unrequited, events, standing)
+    return result(OutcomeKind.TIMEOUT, config.max_days)

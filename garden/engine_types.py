@@ -34,6 +34,7 @@ class Situation:
     """What a twin knows about its own position today, in words."""
 
     standing: str = ""
+    longing: str = ""
 
 
 class OutcomeKind(str, Enum):
@@ -59,3 +60,13 @@ class Attempt:
     day: int
     twin: str
     target: str
+
+
+@dataclass(frozen=True)
+class Reflection:
+    """A twin's private end-of-day reflection. Ratings are logged for analysis, never fed back."""
+
+    day: int
+    twin: str
+    text: str
+    ratings: dict[str, int | str]

@@ -6,7 +6,9 @@ from concordia.language_model import language_model
 from concordia.prefabs.entity import minimal
 from concordia.typing import entity as entity_lib
 
-from .engine_types import Action, Event, Rung, Situation, Twin
+import re
+
+from .engine_types import Action, Event, Reflection, Rung, Situation, Twin
 from .llm import hash_embedder
 from .world_text import NEEDS_TARGET, RUNG_OPTIONS, SPEAKS, WORLD_MEMORIES
 
@@ -58,6 +60,8 @@ class ConcordiaTwins:
         agent.observe(f"Day {day} in the Garden. People around: {', '.join(names)}.")
         if situation and situation.standing:
             agent.observe(f"Day {day}: {situation.standing}")
+        if situation and situation.longing:
+            agent.observe(f"Day {day}: {situation.longing}")
 
         choice = agent.act(entity_lib.ActionSpec(
             call_to_action=f"What does {{name}} do now on day {day}?",
@@ -82,8 +86,51 @@ class ConcordiaTwins:
             )))
         return Action(rung, target, say)
 
-    def after_day(self, day: int, events: list[Event]) -> None:
-        """Deliver what each twin could have seen or heard today. Wall decisions stay private."""
+    def after_day(self, day: int, events: list[Event]) -> list[Reflection]:
+        """Deliver what each twin could have seen or heard today (wall decisions stay private),
+        then let each twin reflect privately. The reflection becomes a memory; ratings are only logged."""
         for e in events:
             if e.target in self._agents and e.rung is not Rung.GO_BEYOND_WALL and e.say:
                 self._agents[e.target].observe(f"Day {day}: {e.twin} said to me: \"{e.say}\"")
+
+        reflections = []
+        for alias, agent in self._agents.items():
+            raw = agent.act(entity_lib.ActionSpec(
+                call_to_action=REFLECTION_PROMPT.format(day=day),
+                output_type=entity_lib.OutputType.FREE,
+            ))
+            text, ratings = parse_reflection(alias, raw)
+            if text:
+                agent.observe(f"Day {day}, my private reflection: {text}")
+            reflections.append(Reflection(day, alias, text, ratings))
+        return reflections
+
+
+REFLECTION_PROMPT = (
+    "It is the end of day {day}. In two or three sentences, {{name}} writes privately about their life here, "
+    "their current situation and anyone on their mind. Then, on a new line, {{name}} writes exactly: "
+    "Ratings: longing=<1-10>; trust=<1-10>; standing_matters=<1-10>; on_my_mind=<a name or none>"
+)
+
+
+def parse_reflection(alias: str, raw: str) -> tuple[str, dict]:
+    """Split a reflection into its text and its self-ratings line."""
+    text = raw.strip()
+    if text.startswith(alias + " "):
+        text = text[len(alias) + 1:].strip()
+    ratings: dict[str, int | str] = {}
+    m = re.search(r"ratings\s*:(.*)$", text, re.I | re.S)
+    if m:
+        for key, value in re.findall(r"(\w+)\s*=\s*([^;\n]+)", m.group(1)):
+            value = value.strip().strip(".<>*").strip()
+            ratings[key.lower()] = int(value) if value.isdigit() else value
+        text = text[: m.start()].strip()
+    return _tidy(text), ratings
+
+
+def _tidy(text: str, max_sentences: int = 3, max_chars: int = 600) -> str:
+    """Plain prose only (no markdown headings, rules or emphasis), capped so memories stay short."""
+    lines = [ln for ln in text.splitlines() if ln.strip() and not ln.strip().startswith(("#", "---"))]
+    text = re.sub(r"[*_]+", "", " ".join(ln.strip() for ln in lines))
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+    return " ".join(sentences[:max_sentences])[:max_chars].strip()
