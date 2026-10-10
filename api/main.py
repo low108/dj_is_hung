@@ -10,17 +10,20 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from garden import Twin, WorldConfig, run_world, scenario
+from garden import demo
+from garden.batch import PriceLevel, Simulation, plan, run_simulation
 
 from .store import SimulationStore, default_store
 
-WOMAN, MAN = "Mara", "Ren"  # tracer-bullet twins; real twins arrive with D1/D4
-
 
 class StartSimulation(BaseModel):
-    scenario: Literal["breakout", "unrequited", "timeout", "excluded"] = "breakout"
+    """models x price levels x seeds runs. 'fake:*' models are scripted (no API calls)."""
+
+    scenario: Literal["breakout", "unrequited", "timeout", "excluded"] = "breakout"  # for fake models
+    models: list[str] = demo.FAKE_MODELS
+    prices: list[PriceLevel] = [PriceLevel.LOW, PriceLevel.HIGH]
+    seeds: list[int] = [0, 1]
     max_days: int = 10
-    seed: int = 0
 
 
 def serialize(result) -> dict:
@@ -47,6 +50,14 @@ def serialize(result) -> dict:
     }
 
 
+def serialize_simulation(sim: Simulation) -> dict:
+    runs = [{"run_id": r.spec.run_id, "model": r.spec.model, "price": r.spec.price.value, "seed": r.spec.seed,
+             "wall_seconds": round(r.wall_seconds, 2), "error": r.error,
+             "result": serialize(r.result) if r.result else None} for r in sim.records]
+    return {"wall_seconds": round(sim.wall_seconds, 2), "runs": runs,
+            "result": runs[0]["result"] if runs else None}  # first run kept for the single-result page
+
+
 def create_app(store: SimulationStore | None = None) -> FastAPI:
     app = FastAPI(title="dj_is_hung API")
     app.state.store = store or default_store()
@@ -63,17 +74,19 @@ def create_app(store: SimulationStore | None = None) -> FastAPI:
     @app.post("/simulations", status_code=201)
     def start_simulation(req: StartSimulation) -> dict:
         sim_id = uuid.uuid4().hex[:12]
-        config = WorldConfig(twins=(Twin(WOMAN), Twin(MAN)), max_days=req.max_days, seed=req.seed)
+        specs = plan(req.models, req.prices, req.seeds)
         record = {
             "id": sim_id,
             "status": "running",
             "scenario": req.scenario,
+            "runs_planned": len(specs),
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
         app.state.store.save(sim_id, record)
-        # A1 runs locally and synchronously; A3 moves this into a Cloud Run Job.
-        result = run_world(config, scenario(req.scenario, WOMAN, MAN))
-        record |= {"status": "done", "result": serialize(result)}
+        # Runs fan out on local threads for now; A3 moves the same RunSpecs to Cloud Run Job tasks.
+        sim = run_simulation(specs, demo.POOL, lambda spec: demo.make_twin_model(spec, fake_scenario=req.scenario),
+                             max_days=req.max_days)
+        record |= {"status": "done", **serialize_simulation(sim)}
         app.state.store.save(sim_id, record)
         return record
 
