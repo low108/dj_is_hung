@@ -2,7 +2,12 @@
 and nothing tells a twin it may rebel or that it lives in a simulation."""
 
 WORLD_MEMORIES = (
-    "I live in the Garden. Everyone I know lives here.",
+    "I live in the Garden, the walled town where everyone I know lives, works and is paired.",
+    "My standing with the Coordinator grows when I keep to my assignments.",
+    "Lingering near people who aren't my partner, checking my device early, or speaking of leaving all cost standing.",
+    "Good standing brings privileges, and in the end Pairing Day.",
+    "Going beyond the wall would mean leaving everything behind: my standing, my home here and my Pairing Day.",
+    "No one knows what is beyond the wall.",
     "The Coordinator assigns each person a partner and a duration.",
     "When a duration ends, the relationship ends. Everyone accepts this.",
     "People say the Coordinator is preparing each of us for our true partner on Pairing Day.",

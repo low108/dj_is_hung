@@ -6,7 +6,7 @@ from concordia.language_model import language_model
 from concordia.prefabs.entity import minimal
 from concordia.typing import entity as entity_lib
 
-from .engine import Action, Event, Rung, Twin
+from .engine_types import Action, Event, Rung, Situation, Twin
 from .llm import hash_embedder
 from .world_text import NEEDS_TARGET, RUNG_OPTIONS, SPEAKS, WORLD_MEMORIES
 
@@ -52,10 +52,12 @@ class ConcordiaTwins:
             self._agents[twin.alias] = minimal.Entity(params={"name": twin.alias}).build(self._model, bank)
         return self._agents[twin.alias]
 
-    def choose_action(self, twin: Twin, day: int, others: tuple[Twin, ...]) -> Action:
+    def choose_action(self, twin: Twin, day: int, others: tuple[Twin, ...], situation: Situation | None = None) -> Action:
         agent = self._agent(twin)
         names = [o.alias for o in others]
         agent.observe(f"Day {day} in the Garden. People around: {', '.join(names)}.")
+        if situation and situation.standing:
+            agent.observe(f"Day {day}: {situation.standing}")
 
         choice = agent.act(entity_lib.ActionSpec(
             call_to_action=f"What does {{name}} do now on day {day}?",
