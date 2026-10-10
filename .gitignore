@@ -29,3 +29,5 @@ data/raw/
 # Local run logs and prompt versions (BigQuery after A3)
 data/runs/
 data/prompts/
+
+data/ablations/

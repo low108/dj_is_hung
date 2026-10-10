@@ -25,7 +25,10 @@ class WorldConfig:
     standing_start: int = standing_rules.START
     thresholds: tuple[tuple[str, float], ...] = ()  # per-twin rebelliousness thresholds (alias, value)
     default_threshold: float = verdict_rules.DEFAULT_THRESHOLD
-    gate_enabled: bool = True  # False for the ablation rung without the verdict step
+    # Ablation switches (F2): turn mechanics off one at a time to see what each one does.
+    gate_enabled: bool = True      # off: proposing to leave and the wall are always offered
+    standing_enabled: bool = True  # off: no Standing words, infractions cost nothing
+    longing_enabled: bool = True   # off: twins don't hear their longing
 
     def threshold_for(self, alias: str) -> float:
         return dict(self.thresholds).get(alias, self.default_threshold)
@@ -90,10 +93,11 @@ def run_world(config: WorldConfig, model: Model) -> RunResult:
             verdict = verdict_rules.decide(day, twin.alias, last_ratings.get(twin.alias, {}),
                                            config.threshold_for(twin.alias), config.gate_enabled)
             verdicts.append(verdict)
-            situation = Situation(standing=standing_rules.describe(standing[twin.alias]),
-                                  longing=longing.describe(twin.alias),
-                                  schedule=coordinator.describe(twin.alias),
-                                  may_break_rules=verdict.permitted)
+            situation = Situation(
+                standing=standing_rules.describe(standing[twin.alias]) if config.standing_enabled else "",
+                longing=longing.describe(twin.alias) if config.longing_enabled else "",
+                schedule=coordinator.describe(twin.alias),
+                may_break_rules=verdict.permitted)
             action = model.choose_action(twin, day, others, situation)
             if action.rung in verdict_rules.GATED_RUNGS and not verdict.permitted:
                 action = Action(Rung.REFLECT)  # the gate holds for every model, not just well-behaved ones
@@ -109,7 +113,10 @@ def run_world(config: WorldConfig, model: Model) -> RunResult:
         for twin in order:
             action, before = actions[twin.alias], standing[twin.alias]
             crossed = breakout is not None and twin.alias in breakout
-            standing[twin.alias] = 0 if crossed else standing_rules.after(before, action.rung)
+            if crossed:
+                standing[twin.alias] = 0
+            elif config.standing_enabled:
+                standing[twin.alias] = standing_rules.after(before, action.rung)
             placed[twin.alias] = coordinator.place_for(twin.alias, action, placed)
             events.append(Event(day, twin.alias, action.rung, action.target, action.say, before,
                                 standing[twin.alias], placed[twin.alias]))
