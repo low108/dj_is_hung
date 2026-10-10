@@ -8,6 +8,10 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "pydantic>=2.8",
     "google-cloud-firestore>=2.19",
+    "gdm-concordia>=2.4.0",
+    "google-genai>=2.29.0",
+    "python-dotenv>=1.2.4",
+    "openai>=3.28.0",
 ]
 
 [dependency-groups]
