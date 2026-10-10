@@ -16,8 +16,14 @@ COST = {
 }
 
 
+COMPLIANT_DAY_GAIN = 3  # keeping to the rules for a day builds standing back up
+
+
 def after(standing: int, rung: Rung) -> int:
-    return max(0, standing - COST.get(rung, 0))
+    """Infractions cost Standing; a compliant day earns a little, up to START."""
+    if rung in COST:
+        return max(0, standing - COST[rung])
+    return min(START, standing + COMPLIANT_DAY_GAIN)
 
 
 def describe(standing: int) -> str:
