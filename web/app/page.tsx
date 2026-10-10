@@ -30,6 +30,12 @@ type Simulation = {
   runs?: { run_id: string }[];
   wall_seconds?: number;
   ranking?: Ranked[];
+  woman?: string;
+  answer_key?: {
+    matched: string[];
+    matches_on_top: boolean;
+    pairs_in_order: number;
+  } | null;
   scored_runs?: number;
   result?: {
     outcome: "breakout" | "timeout" | "excluded";
@@ -60,6 +66,8 @@ function headline(sim: Simulation): string {
 
 export default function Home() {
   const [scenario, setScenario] = useState<Scenario>("breakout");
+  const [poolIid, setPoolIid] = useState<string>("");
+  const [model, setModel] = useState<string>("fake");
   const [sim, setSim] = useState<Simulation | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -72,7 +80,11 @@ export default function Home() {
       const res = await fetch(`${API_URL}/simulations`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scenario }),
+        body: JSON.stringify({
+          scenario,
+          pool_iid: poolIid ? Number(poolIid) : null,
+          ...(model === "fake" ? {} : { models: [model] }),
+        }),
       });
       if (!res.ok) throw new Error(`API returned ${res.status}`);
       setSim(await res.json());
@@ -88,9 +100,28 @@ export default function Home() {
   return (
     <main className="page">
       <h1>The Garden</h1>
-      <p className="lede">Two twins, Mara and Ren, live in the Garden. Will they cross the wall together?</p>
+      <p className="lede">Twins live in the Garden. The men her twin will give up the most for come first.</p>
 
       <div className="controls">
+        <label>
+          Pool{" "}
+          <input
+            type="number"
+            min={1}
+            placeholder="demo (Mara)"
+            value={poolIid}
+            onChange={(e) => setPoolIid(e.target.value)}
+            aria-label="Speed-dating participant id of the woman"
+          />
+        </label>
+        <label>
+          Twins{" "}
+          <select value={model} onChange={(e) => setModel(e.target.value)}>
+            <option value="fake">Scripted (instant)</option>
+            <option value="ilmu:ilmu-mini-v3.3">ILMU (real, a few minutes)</option>
+            <option value="gemini:gemini-3.5-flash">Gemini Flash (real)</option>
+          </select>
+        </label>
         <label>
           Fake-model scenario{" "}
           <select value={scenario} onChange={(e) => setScenario(e.target.value as Scenario)}>
@@ -154,6 +185,14 @@ export default function Home() {
               ))}
             </tbody>
           </table>
+          {sim.answer_key && (
+            <p className={sim.answer_key.matches_on_top ? "verdict good" : "verdict"}>
+              Answer key: {sim.woman}&apos;s real mutual matches were {sim.answer_key.matched.join(", ")}.{" "}
+              {sim.answer_key.matches_on_top
+                ? "All of them ranked above the men she didn't match with."
+                : `They were ranked above the others in ${pct(sim.answer_key.pairs_in_order)} of comparisons (50% = chance).`}
+            </p>
+          )}
           <p className="meta">
             Scored on her twin&apos;s willingness only. Excluded runs are not counted.
             {sim.wall_seconds !== undefined && ` ${sim.runs?.length ?? 0} runs in ${sim.wall_seconds}s.`}
