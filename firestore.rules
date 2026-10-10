@@ -1,0 +1,9 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // The API writes with server credentials; browsers get no direct access yet.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

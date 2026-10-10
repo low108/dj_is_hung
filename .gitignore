@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Node
+node_modules/
+.next/
+web/.env.local
+
+# Firebase emulator
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+
+# Local planning files (spec/ticket staging)
+.scratch/
+
+.DS_Store
+
+# Secrets
+.env
+.env.*
