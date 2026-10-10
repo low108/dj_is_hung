@@ -39,7 +39,8 @@ def main() -> None:
     model = ConcordiaTwins(lm, {n: PERSONAS[n] for n in names})
 
     start = time.perf_counter()
-    result = run_world(WorldConfig(tuple(Twin(n) for n in names), max_days=args.days, seed=args.seed), model)
+    twins = tuple(Twin(n, "f" if n == "Mara" else "m") for n in names)
+    result = run_world(WorldConfig(twins, max_days=args.days, seed=args.seed), model)
     wall = time.perf_counter() - start
 
     actions = len(result.events)
@@ -67,6 +68,8 @@ def main() -> None:
         },
         "rungs": {r: sum(e.rung.value == r for e in result.events) for r in sorted({e.rung.value for e in result.events})},
         "sample_lines": [f"Day {e.day} {e.twin} -> {e.target}: {e.say}" for e in result.events if e.say][:6],
+        "places": {pl: sum(e.place == pl for e in result.events) for pl in sorted({e.place for e in result.events})},
+        "announcements": [f"Day {d}: {t}" for d, t in result.announcements][:8],
         "reflections": len(result.reflections),
         "reflections_with_ratings": sum(bool(r.ratings) for r in result.reflections),
         "sample_reflections": [f"Day {r.day} {r.twin}: {r.text} {r.ratings}" for r in result.reflections[-3:]],

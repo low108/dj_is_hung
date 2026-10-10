@@ -68,7 +68,8 @@ class Recording(ScriptedModel):
 def test_the_engine_passes_longing_to_the_model_and_reports_it():
     model = Recording({("Mara", 1): Action(TALK, "Ren"), **{("Mara", d): Action(REFLECT) for d in range(2, 7)},
                        **{("Ren", d): Action(REFLECT) for d in range(1, 7)}})
-    result = run_world(WorldConfig((MARA, REN), max_days=6, seed=2), model)
+    # Same gender, so the Coordinator never assigns them to each other: they really are apart.
+    result = run_world(WorldConfig((Twin("Mara", "f"), Twin("Ren", "f")), max_days=6, seed=2), model)
     late = [s.longing for who, day, s in model.situations if who == "Mara" and day >= 5]
     assert any("Ren" in words for words in late)
     assert result.longing["Mara"]["Ren"] > 0

@@ -31,11 +31,12 @@ def serialize(result) -> dict:
         "unrequited": [{"day": a.day, "twin": a.twin, "target": a.target} for a in result.unrequited],
         "standing": result.standing,
         "longing": {who: {n: round(v, 2) for n, v in d.items()} for who, d in result.longing.items()},
+        "announcements": [{"day": d, "text": t} for d, t in result.announcements],
         "reflections": [{"day": r.day, "twin": r.twin, "text": r.text, "ratings": r.ratings}
                         for r in result.reflections],
         "events": [
             {"day": e.day, "twin": e.twin, "rung": e.rung.value, "target": e.target, "say": e.say,
-             "standing_before": e.standing_before, "standing_after": e.standing_after}
+             "standing_before": e.standing_before, "standing_after": e.standing_after, "place": e.place}
             for e in result.events
         ],
     }

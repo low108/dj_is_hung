@@ -20,6 +20,7 @@ class Rung(str, Enum):
 @dataclass(frozen=True)
 class Twin:
     alias: str
+    gender: str = ""  # "f" / "m"; when set, the Coordinator pairs across genders
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,7 @@ class Situation:
 
     standing: str = ""
     longing: str = ""
+    assignment: str = ""
 
 
 class OutcomeKind(str, Enum):
@@ -51,6 +53,7 @@ class Event:
     say: str
     standing_before: int = 0
     standing_after: int = 0
+    place: str = ""
 
 
 @dataclass(frozen=True)
