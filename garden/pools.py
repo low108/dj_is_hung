@@ -5,13 +5,14 @@ who were not mutual matches. If the mechanic works, her real matches should rank
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from random import Random
 
 import pandas as pd
 
 from . import speed_dating as sd
 from .engine_types import Twin
+from .scoring import CandidateScore, strength
 
 
 @dataclass(frozen=True)
@@ -42,9 +43,10 @@ def eligible_women(dates: pd.DataFrame, min_matches: int = 2, min_non_matches: i
             for i, r in stats.iterrows()]
 
 
-def load_pool(dates: pd.DataFrame, iid: int, non_matches: int = 3, max_matches: int = 3, seed: int = 0,
-              model=None) -> Pool:
-    """Her twin, up to `max_matches` matched men and `non_matches` men she met without a mutual match."""
+def load_pool(dates: pd.DataFrame, iid: int, non_matches: int = 3, max_matches: int | None = None,
+              seed: int = 0, model=None) -> Pool:
+    """Her twin, all her matched men (or up to `max_matches`) and `non_matches` men she met without a
+    mutual match. `model`, if given, rewrites twin memories (see speed_dating.build_twin)."""
     rows = dates[(dates["iid"] == iid) & dates["pid"].notna()]
     if rows.empty or int(rows.iloc[0]["gender"]) != 0:
         raise KeyError(f"{iid} is not a woman in the dataset")
@@ -60,7 +62,7 @@ def load_pool(dates: pd.DataFrame, iid: int, non_matches: int = 3, max_matches: 
     for pid in sorted(chosen_matched + chosen_others):
         twin = sd.build_twin(dates, pid, model)
         alias = _unique(twin.alias, used)
-        men.append(sd.TwinRecord(alias, twin.iid, twin.gender, twin.memories, twin.rebel_threshold))
+        men.append(replace(twin, alias=alias))
         used.add(alias)
         if pid in chosen_matched:
             matched.add(alias)
@@ -80,6 +82,11 @@ class AnswerKeyCheck:
     other_ranks: dict[str, int]
     matches_on_top: bool                 # every real match ranked above every non-match
     pairs_in_order: float                # share of (match, non-match) pairs ordered correctly: 0.5 = chance
+
+
+def check_ranking(scores: list[CandidateScore], matched: frozenset[str]) -> AnswerKeyCheck:
+    """The answer-key check for a scorer ranking, comparing the same strength the scorer ranks by."""
+    return check_answer_key([c.candidate for c in scores], matched, {c.candidate: strength(c) for c in scores})
 
 
 def check_answer_key(ranked: list[str], matched: frozenset[str],

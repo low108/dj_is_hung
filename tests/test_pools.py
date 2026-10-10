@@ -30,6 +30,18 @@ def test_eligible_women_need_two_matches_and_three_non_matches():
     assert [w["iid"] for w in eligible_women(fake_dates())] == [1]
 
 
+def test_all_her_matches_are_included_by_default():
+    rows = []
+    for pid in range(10, 16):  # 5 matches, 1 non-match... plus 3 non-matches below
+        rows.append(person(3, 0, pid=pid, match=1 if pid < 15 else 0))
+        rows.append(person(pid, 1, pid=3, match=1 if pid < 15 else 0))
+    for pid in (16, 17):
+        rows.append(person(3, 0, pid=pid, match=0))
+        rows.append(person(pid, 1, pid=3, match=0))
+    pool = load_pool(pd.DataFrame(rows), 3)
+    assert len(pool.matched) == 5
+
+
 def test_a_pool_is_her_twin_her_matches_and_some_non_matches():
     pool = load_pool(fake_dates(), 1, non_matches=3)
     assert pool.woman.iid == 1 and pool.woman.gender == "f"

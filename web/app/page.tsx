@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
 
@@ -68,6 +68,14 @@ export default function Home() {
   const [scenario, setScenario] = useState<Scenario>("breakout");
   const [poolIid, setPoolIid] = useState<string>("");
   const [model, setModel] = useState<string>("fake");
+  const [pools, setPools] = useState<{ iid: number; matches: number; dates: number }[]>([]);
+
+  useEffect(() => {
+    fetch(`${API_URL}/pools`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setPools)
+      .catch(() => setPools([])); // no dataset downloaded: only the demo pool is offered
+  }, []);
   const [sim, setSim] = useState<Simulation | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -105,14 +113,14 @@ export default function Home() {
       <div className="controls">
         <label>
           Pool{" "}
-          <input
-            type="number"
-            min={1}
-            placeholder="demo (Mara)"
-            value={poolIid}
-            onChange={(e) => setPoolIid(e.target.value)}
-            aria-label="Speed-dating participant id of the woman"
-          />
+          <select value={poolIid} onChange={(e) => setPoolIid(e.target.value)} aria-label="Pool">
+            <option value="">Demo pool (Mara)</option>
+            {pools.map((p) => (
+              <option key={p.iid} value={p.iid}>
+                Participant {p.iid}: {p.matches} matches of {p.dates} dates
+              </option>
+            ))}
+          </select>
         </label>
         <label>
           Twins{" "}

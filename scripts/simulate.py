@@ -13,8 +13,8 @@ from dotenv import load_dotenv
 from garden import demo
 from garden import pools as pool_lib
 from garden import speed_dating as sd
-from garden.scoring import score
 from garden.batch import PriceLevel, plan, run_simulation
+from garden.scoring import score
 
 
 def main() -> None:
@@ -54,10 +54,8 @@ def main() -> None:
     for i, c in enumerate(ranking, 1):
         print(f"  {i}. {c.candidate:8s} {c.price.value if c.price else 'never':5s} {c.breakouts}/{c.runs} "
               f"({c.ci_low:.0%}-{c.ci_high:.0%})")
-    if pool:
-        strength = {c.candidate: ({"high": 2, "low": 1}.get(c.price.value if c.price else "", 0), c.ci_low)
-                    for c in ranking}
-        check = pool_lib.check_answer_key([c.candidate for c in ranking], pool.matched, strength)
+    if pool is not None:
+        check = pool_lib.check_ranking(ranking, pool.matched)
         print(f"answer key: matches on top = {check.matches_on_top}, pairs in order = {check.pairs_in_order:.0%} (50% = chance)")
 
 

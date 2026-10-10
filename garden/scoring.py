@@ -40,6 +40,11 @@ def wilson(successes: int, n: int, z: float = Z95) -> tuple[float, float]:
     return round(max(0.0, centre - half), 3), round(min(1.0, centre + half), 3)
 
 
+def strength(c: CandidateScore) -> tuple[int, float]:
+    """How strongly her twin chose him: price level reached (0 = never), then the range's low end."""
+    return (PRICE_ORDER.index(c.price) + 1 if c.price else 0, c.ci_low)
+
+
 def score(records: list[RunRecord], woman: str, candidates: list[str]) -> list[CandidateScore]:
     """Ranked best first: higher price level, then the low end of the confidence range (so a steady
     9/10 beats a lucky 1/1), then name."""
@@ -58,5 +63,4 @@ def score(records: list[RunRecord], woman: str, candidates: list[str]) -> list[C
             k, n = by_price[best.value]
         low, high = wilson(k, n)
         scores.append(CandidateScore(man, best, k, n, low, high, by_price))
-    rank = {p: i for i, p in enumerate(PRICE_ORDER)}
-    return sorted(scores, key=lambda s: (-(rank[s.price] + 1 if s.price else 0), -s.ci_low, s.candidate))
+    return sorted(scores, key=lambda s: (tuple(-x for x in strength(s)), s.candidate))

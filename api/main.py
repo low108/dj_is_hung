@@ -54,19 +54,20 @@ def serialize(result) -> dict:
     }
 
 
-def serialize_simulation(sim: Simulation, woman: str = demo.WOMAN, men: list[str] = demo.MEN,
+def serialize_simulation(sim: Simulation, woman: str = demo.WOMAN, men: list[str] | None = None,
                          matched: frozenset[str] | None = None) -> dict:
+    men = demo.MEN if men is None else men
+    scores = score(list(sim.records), woman, men)
     runs = [{"run_id": r.spec.run_id, "model": r.spec.model, "price": r.spec.price.value, "seed": r.spec.seed,
              "wall_seconds": round(r.wall_seconds, 2), "error": r.error,
              "result": serialize(r.result) if r.result else None} for r in sim.records]
     ranking = [{"candidate": c.candidate, "price": c.price.value if c.price else None, "breakouts": c.breakouts,
                 "runs": c.runs, "ci_low": c.ci_low, "ci_high": c.ci_high,
                 "by_price": {p: list(v) for p, v in c.breakouts_by_price.items()}}
-               for c in score(list(sim.records), woman, men)]
+               for c in scores]
     answer_key = None
     if matched is not None:
-        strength = {r["candidate"]: ({"high": 2, "low": 1}.get(r["price"], 0), r["ci_low"]) for r in ranking}
-        check = pool_lib.check_answer_key([r["candidate"] for r in ranking], matched, strength)
+        check = pool_lib.check_ranking(scores, matched)
         answer_key = {"matched": sorted(matched), "matched_ranks": check.matched_ranks,
                       "other_ranks": check.other_ranks, "matches_on_top": check.matches_on_top,
                       "pairs_in_order": check.pairs_in_order}
