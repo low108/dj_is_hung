@@ -9,6 +9,7 @@ from random import Random
 from typing import Protocol
 
 from . import standing as standing_rules
+from . import verdict as verdict_rules
 from .engine_types import (Action, Announcement, Attempt, Event, OutcomeKind, Reflection, Rung, Situation,
                            Twin, Verdict)
 from .coordinator import Coordinator
@@ -21,6 +22,12 @@ class WorldConfig:
     max_days: int = 10
     seed: int = 0
     standing_start: int = standing_rules.START
+    thresholds: tuple[tuple[str, float], ...] = ()  # per-twin rebelliousness thresholds (alias, value)
+    default_threshold: float = verdict_rules.DEFAULT_THRESHOLD
+    gate_enabled: bool = True  # False for the ablation rung without the verdict step
+
+    def threshold_for(self, alias: str) -> float:
+        return dict(self.thresholds).get(alias, self.default_threshold)
 
 
 class Model(Protocol):
@@ -51,11 +58,13 @@ def run_world(config: WorldConfig, model: Model) -> RunResult:
     longing = Longing()
     reflections: list[Reflection] = []
     coordinator = Coordinator(config.twins, Random(config.seed + 1))
+    verdicts: list[Verdict] = []
+    last_ratings: dict[str, dict] = {}  # each twin's own latest reflection ratings: the verdict's assessment
 
     def result(outcome: OutcomeKind, day: int, pair=None) -> RunResult:
         return RunResult(outcome, day, pair, unrequited, events, standing,
                          {t.alias: longing.of(t.alias) for t in config.twins}, reflections,
-                         coordinator.announcements, list(getattr(model, "verdicts", [])))
+                         coordinator.announcements, verdicts)
 
     for day in range(1, config.max_days + 1):
         coordinator.start_day(day, longing.bond)
@@ -65,10 +74,17 @@ def run_world(config: WorldConfig, model: Model) -> RunResult:
         actions: dict[str, Action] = {}
         for twin in order:
             others = tuple(t for t in config.twins if t != twin)
+            verdict = verdict_rules.decide(day, twin.alias, last_ratings.get(twin.alias, {}),
+                                           config.threshold_for(twin.alias), config.gate_enabled)
+            verdicts.append(verdict)
             situation = Situation(standing=standing_rules.describe(standing[twin.alias]),
                                   longing=longing.describe(twin.alias),
-                                  schedule=coordinator.describe(twin.alias))
-            actions[twin.alias] = action = model.choose_action(twin, day, others, situation)
+                                  schedule=coordinator.describe(twin.alias),
+                                  may_break_rules=verdict.permitted)
+            action = model.choose_action(twin, day, others, situation)
+            if action.rung in verdict_rules.GATED_RUNGS and not verdict.permitted:
+                action = Action(Rung.REFLECT)  # the gate holds for every model, not just well-behaved ones
+            actions[twin.alias] = action
             coordinator.on_action(day, twin.alias, action)
             if action.rung is Rung.GO_BEYOND_WALL and action.target:
                 crossings[twin.alias] = action.target
@@ -93,6 +109,8 @@ def run_world(config: WorldConfig, model: Model) -> RunResult:
 
         after_day = getattr(model, "after_day", None)  # models with memory hear what happened today
         if after_day:
-            reflections.extend(after_day(day, [e for e in events if e.day == day]) or [])
+            todays = after_day(day, [e for e in events if e.day == day]) or []
+            reflections.extend(todays)
+            last_ratings.update({r.twin: r.ratings for r in todays if r.ratings})
 
     return result(OutcomeKind.TIMEOUT, config.max_days)

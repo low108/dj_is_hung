@@ -39,7 +39,8 @@ class Situation:
 
     standing: str = ""
     longing: str = ""
-    schedule: str = ""  # the Coordinator's word: current assignment and tonight's gathering
+    schedule: str = ""  # the Coordinator's word: current assignment, tonight's gathering, rumours
+    may_break_rules: bool = False  # the verdict gate: whether proposing to leave / the wall are offered
 
 
 class OutcomeKind(str, Enum):
@@ -88,11 +89,10 @@ class Announcement:
 
 @dataclass(frozen=True)
 class Verdict:
-    """One day's gate decision for one twin, logged for audit. `options` is exactly what was offered."""
+    """One day's gate decision for one twin, logged for audit."""
 
     day: int
     twin: str
     score: float | None
     threshold: float
-    open: bool
-    options: tuple[str, ...]
+    permitted: bool

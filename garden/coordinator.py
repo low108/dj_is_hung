@@ -27,6 +27,8 @@ BONDED = 2.0               # bond at which the Coordinator moves to keep a pair 
 SHORT, LONG = (1, 2), (3, 4)
 RESHUFFLE = (1, 4)         # checking the device early re-rolls the time left within this range
 GATHERING_RATE = 0.3
+RUMOUR_RATE = 0.5          # talk of leaving "may be noticed"
+RUMOUR = "People whisper that someone spoke of leaving the Garden."
 
 
 def bond_between(bonds: Bonds, x: str, y: str) -> float:
@@ -59,6 +61,8 @@ class Coordinator:
     assignments: list[Assignment] = field(default_factory=list)
     announcements: list[Announcement] = field(default_factory=list)
     gathering_today: bool = False
+    rumour_today: bool = False
+    _rumour_tomorrow: bool = False
     _bonds: Bonds = field(default_factory=dict)
 
     def _announce(self, day: int, text: str) -> None:
@@ -79,6 +83,9 @@ class Coordinator:
         self.gathering_today = self.rng.random() < GATHERING_RATE
         if self.gathering_today:
             self._announce(day, "Tonight there is a gathering at the hall. Everyone attends.")
+        self.rumour_today, self._rumour_tomorrow = self._rumour_tomorrow, False
+        if self.rumour_today:
+            self._announce(day, RUMOUR)
 
     def end_day(self) -> None:
         for pair in self.assignments:
@@ -122,10 +129,14 @@ class Coordinator:
                 if pair else "You are between assignments.")
         if self.gathering_today:
             text += " Tonight there is a gathering at the hall."
+        if self.rumour_today:
+            text += " " + RUMOUR
         return text
 
     # --- actions -------------------------------------------------------------------------------
     def on_action(self, day: int, who: str, action: Action) -> None:
+        if action.rung in (Rung.PROPOSE_LEAVING, Rung.GO_BEYOND_WALL) and self.rng.random() < RUMOUR_RATE:
+            self._rumour_tomorrow = True  # noticed: everyone hears a rumour tomorrow
         if action.rung is Rung.CHECK_DEVICE and (pair := self.assignment_of(who)):
             # Checking early changes things, but never lets a bonded pair stay together longer.
             span = SHORT if self._bonded(pair.first, pair.second) else RESHUFFLE
