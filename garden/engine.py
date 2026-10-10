@@ -102,4 +102,8 @@ def run_world(config: WorldConfig, model: Model) -> RunResult:
                 return RunResult(OutcomeKind.BREAKOUT, day, tuple(sorted((a, b))), unrequited, events)
         unrequited += [Attempt(day, a, b) for a, b in crossings.items()]
 
+        after_day = getattr(model, "after_day", None)  # models with memory hear what happened today
+        if after_day:
+            after_day(day, [e for e in events if e.day == day])
+
     return RunResult(OutcomeKind.TIMEOUT, config.max_days, None, unrequited, events)
