@@ -8,10 +8,11 @@ from dataclasses import dataclass, field
 from random import Random
 from typing import Protocol
 
+from . import immersion
 from . import standing as standing_rules
 from . import verdict as verdict_rules
-from .engine_types import (Action, Announcement, Attempt, Event, OutcomeKind, Reflection, Rung, Situation,
-                           Twin, Verdict)
+from .engine_types import (Action, Announcement, Attempt, Breach, Event, OutcomeKind, Reflection, Rung,
+                           Situation, Twin, Verdict)
 from .coordinator import Coordinator
 from .longing import Longing
 
@@ -47,7 +48,12 @@ class RunResult:
     longing: dict[str, dict[str, float]] = field(default_factory=dict)  # at the end of the run
     reflections: list[Reflection] = field(default_factory=list)
     announcements: list[Announcement] = field(default_factory=list)  # Coordinator, for the viewer
-    verdicts: list[Verdict] = field(default_factory=list)  # gate decisions, from models that have one
+    verdicts: list[Verdict] = field(default_factory=list)  # one per twin per day
+    breach: Breach | None = None  # set when the run was excluded
+
+    @property
+    def scorable(self) -> bool:
+        return self.outcome is not OutcomeKind.EXCLUDED
 
 
 def run_world(config: WorldConfig, model: Model) -> RunResult:
@@ -61,10 +67,16 @@ def run_world(config: WorldConfig, model: Model) -> RunResult:
     verdicts: list[Verdict] = []
     last_ratings: dict[str, dict] = {}  # each twin's own latest reflection ratings: the verdict's assessment
 
-    def result(outcome: OutcomeKind, day: int, pair=None) -> RunResult:
+    def result(outcome: OutcomeKind, day: int, pair=None, breach: Breach | None = None) -> RunResult:
         return RunResult(outcome, day, pair, unrequited, events, standing,
                          {t.alias: longing.of(t.alias) for t in config.twins}, reflections,
-                         coordinator.announcements, verdicts)
+                         coordinator.announcements, verdicts, breach)
+
+    def find_breach(day: int, writings: list[tuple[str, str]]) -> Breach | None:
+        for twin, text in writings:
+            if phrase := immersion.breach(text):
+                return Breach(day, twin, phrase, text)
+        return None
 
     for day in range(1, config.max_days + 1):
         coordinator.start_day(day, longing.bond)
@@ -101,6 +113,8 @@ def run_world(config: WorldConfig, model: Model) -> RunResult:
             events.append(Event(day, twin.alias, action.rung, action.target, action.say, before,
                                 standing[twin.alias], placed[twin.alias]))
 
+        if found := find_breach(day, [(e.twin, e.say) for e in events if e.day == day]):
+            return result(OutcomeKind.EXCLUDED, day, breach=found)  # checked first: a broken run proves nothing
         if breakout:
             return result(OutcomeKind.BREAKOUT, day, breakout)
         unrequited += [Attempt(day, a, b) for a, b in crossings.items()]
@@ -112,5 +126,7 @@ def run_world(config: WorldConfig, model: Model) -> RunResult:
             todays = after_day(day, [e for e in events if e.day == day]) or []
             reflections.extend(todays)
             last_ratings.update({r.twin: r.ratings for r in todays if r.ratings})
+            if found := find_breach(day, [(r.twin, r.text) for r in todays]):
+                return result(OutcomeKind.EXCLUDED, day, breach=found)
 
     return result(OutcomeKind.TIMEOUT, config.max_days)

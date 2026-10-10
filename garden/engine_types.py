@@ -46,6 +46,7 @@ class Situation:
 class OutcomeKind(str, Enum):
     BREAKOUT = "breakout"
     TIMEOUT = "timeout"
+    EXCLUDED = "excluded"  # a twin broke immersion; the run is not scored
 
 
 @dataclass(frozen=True)
@@ -96,3 +97,13 @@ class Verdict:
     score: float | None
     threshold: float
     permitted: bool
+
+
+@dataclass(frozen=True)
+class Breach:
+    """Where a twin broke immersion: what it said or wrote, and the phrase that gave it away."""
+
+    day: int
+    twin: str
+    phrase: str
+    text: str

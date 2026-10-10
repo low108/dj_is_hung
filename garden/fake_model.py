@@ -12,9 +12,11 @@ class ScriptedModel:
     """Returns scripted actions keyed by (twin alias, day); everyone else just talks.
     Each evening every twin 'reflects' with the given ratings, which feed the verdict gate."""
 
-    def __init__(self, script: dict[tuple[str, int], Action] | None = None, ratings: dict | None = RESTLESS):
+    def __init__(self, script: dict[tuple[str, int], Action] | None = None, ratings: dict | None = RESTLESS,
+                 reflections: dict[tuple[str, int], str] | None = None):
         self.script = script or {}
         self.ratings = ratings
+        self.reflections = reflections or {}  # optional scripted reflection text by (twin, day)
         self._seen: list[str] = []
 
     def choose_action(self, twin: Twin, day: int, others: tuple[Twin, ...], situation: Situation | None = None) -> Action:
@@ -25,7 +27,8 @@ class ScriptedModel:
     def after_day(self, day: int, events: list[Event]) -> list[Reflection]:
         if self.ratings is None:
             return []
-        return [Reflection(day, alias, "", dict(self.ratings)) for alias in self._seen]
+        return [Reflection(day, alias, self.reflections.get((alias, day), ""), dict(self.ratings))
+                for alias in self._seen]
 
 
 def scenario(name: str, woman: str, man: str) -> ScriptedModel:
