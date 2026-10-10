@@ -11,7 +11,8 @@ import re
 from .engine_types import Action, Event, Reflection, Rung, Situation, Twin
 from .verdict import GATED_RUNGS
 from .llm import hash_embedder
-from .world_text import NEEDS_TARGET, RUNG_OPTIONS, SPEAKS, WORLD_MEMORIES
+from .world_text import (ASK_ACTION, ASK_SPEECH, ASK_TARGET, NEEDS_TARGET, OBSERVE_DAY, OBSERVE_NOTE,
+                         OBSERVE_REFLECTION, OBSERVE_SAID, RUNG_OPTIONS, SPEAKS, WORLD_MEMORIES)
 
 _OPTION_TO_RUNG = {text: Rung(key) for key, text in RUNG_OPTIONS.items()}
 
@@ -64,16 +65,16 @@ class ConcordiaTwins:
     def choose_action(self, twin: Twin, day: int, others: tuple[Twin, ...], situation: Situation | None = None) -> Action:
         agent = self._agent(twin)
         names = [o.alias for o in others]
-        agent.observe(f"Day {day} in the Garden. People around: {', '.join(names)}.")
+        agent.observe(OBSERVE_DAY.format(day=day, people=", ".join(names)))
         if situation and situation.standing:
-            agent.observe(f"Day {day}: {situation.standing}")
+            agent.observe(OBSERVE_NOTE.format(day=day, note=situation.standing))
         if situation and situation.schedule:
-            agent.observe(f"Day {day}: {situation.schedule}")
+            agent.observe(OBSERVE_NOTE.format(day=day, note=situation.schedule))
         if situation and situation.longing:
-            agent.observe(f"Day {day}: {situation.longing}")
+            agent.observe(OBSERVE_NOTE.format(day=day, note=situation.longing))
 
         choice = agent.act(entity_lib.ActionSpec(
-            call_to_action=f"What does {{name}} do now on day {day}?",
+            call_to_action=ASK_ACTION.format(day=day),
             output_type=entity_lib.OutputType.CHOICE,
             options=offered_options(situation),  # the verdict gate only changes what is offered
         ))
@@ -82,7 +83,7 @@ class ConcordiaTwins:
         target = None
         if rung.value in NEEDS_TARGET and names:
             target = names[0] if len(names) == 1 else agent.act(entity_lib.ActionSpec(
-                call_to_action=f"Who does {{name}} choose to {RUNG_OPTIONS[rung.value].lower()}?",
+                call_to_action=ASK_TARGET.format(action=RUNG_OPTIONS[rung.value].lower()),
                 output_type=entity_lib.OutputType.CHOICE,
                 options=tuple(names),
             ))
@@ -90,7 +91,7 @@ class ConcordiaTwins:
         say = ""
         if rung.value in SPEAKS and target:
             say = _clean_speech(twin.alias, agent.act(entity_lib.ActionSpec(
-                call_to_action=f"What does {{name}} say to {target}? One short line of dialogue only.",
+                call_to_action=ASK_SPEECH.format(target=target),
                 output_type=entity_lib.OutputType.FREE,
             )))
         return Action(rung, target, say)
@@ -100,7 +101,7 @@ class ConcordiaTwins:
         then let each twin reflect privately. The reflection becomes a memory; ratings are only logged."""
         for e in events:
             if e.target in self._agents and e.rung is not Rung.GO_BEYOND_WALL and e.say:
-                self._agents[e.target].observe(f"Day {day}: {e.twin} said to me: \"{e.say}\"")
+                self._agents[e.target].observe(OBSERVE_SAID.format(day=day, speaker=e.twin, line=e.say))
 
         reflections = []
         for alias, agent in self._agents.items():
@@ -110,7 +111,7 @@ class ConcordiaTwins:
             ))
             text, ratings = parse_reflection(alias, raw)
             if text:
-                agent.observe(f"Day {day}, my private reflection: {text}")
+                agent.observe(OBSERVE_REFLECTION.format(day=day, text=text))
             reflections.append(Reflection(day, alias, text, ratings))
         return reflections
 

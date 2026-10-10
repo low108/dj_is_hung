@@ -5,7 +5,8 @@ from garden import demo, prompts
 from garden.batch import PriceLevel, plan, run_simulation
 from garden.runlog import write_simulation
 
-RUN_FIELDS = {"seed", "prompt_version", "model", "temperature", "price_level", "outcome", "breakout_pair", "day_ended"}
+RUN_FIELDS = {"seed", "prompt_version", "provider", "model", "temperature_text", "temperature_choice",
+              "price_level", "outcome", "breakout_pair", "day_ended"}
 
 
 def rows(path):
@@ -33,7 +34,7 @@ def test_every_run_row_has_its_reproducibility_fields(tmp_path):
     directory, _ = simulate(tmp_path)
     for run in rows(directory / "runs.jsonl"):
         assert RUN_FIELDS <= set(run)
-        assert run["prompt_version"] and run["temperature"]["choice"] and run["model"].startswith("fake:")
+        assert run["prompt_version"] and run["temperature_choice"] and run["provider"] == "fake"
 
 
 def test_a_prompt_version_maps_to_the_exact_prompt_text(tmp_path):
@@ -46,5 +47,19 @@ def test_a_prompt_version_maps_to_the_exact_prompt_text(tmp_path):
 
 def test_changing_any_prompt_text_changes_the_version():
     texts = prompts.prompt_texts()
-    changed = dict(texts, rumour=texts["rumour"] + " ")
+    changed = dict(texts, templates=dict(texts["templates"], ASK_SPEECH=texts["templates"]["ASK_SPEECH"] + " "))
     assert prompts.prompt_version(changed) != prompts.prompt_version(texts)
+
+
+def test_every_twin_facing_template_is_versioned():
+    texts = prompts.prompt_texts()
+    assert set(texts["templates"]) == {"OBSERVE_DAY", "OBSERVE_NOTE", "OBSERVE_SAID", "OBSERVE_REFLECTION",
+                                       "ASK_ACTION", "ASK_TARGET", "ASK_SPEECH"}
+    assert len(texts["standing_words"]) == 5 and len(texts["longing_words"]) == 3
+    assert "RUMOUR" in texts["schedule"] and "SCHEDULE_GATHERING" in texts["schedule"]
+
+
+def test_scores_have_fixed_columns_per_price_level(tmp_path):
+    directory, _ = simulate(tmp_path)
+    score_row = rows(directory / "scores.jsonl")[0]
+    assert {"breakouts_low", "runs_low", "rate_low", "breakouts_high", "runs_high", "rate_high"} <= set(score_row)

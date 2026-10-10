@@ -30,3 +30,12 @@ RUNG_OPTIONS = {
 
 NEEDS_TARGET = {"talk", "seek_out", "propose_leaving", "go_beyond_wall"}
 SPEAKS = {"talk", "seek_out", "propose_leaving", "go_beyond_wall"}
+
+# Templates the twins see each day. {name} is filled in by Concordia with the twin's own name.
+OBSERVE_DAY = "Day {day} in the Garden. People around: {people}."
+OBSERVE_NOTE = "Day {day}: {note}"
+OBSERVE_SAID = 'Day {day}: {speaker} said to me: "{line}"'
+OBSERVE_REFLECTION = "Day {day}, my private reflection: {text}"
+ASK_ACTION = "What does {{name}} do now on day {day}?"
+ASK_TARGET = "Who does {{name}} choose to {action}?"
+ASK_SPEECH = "What does {{name}} say to {target}? One short line of dialogue only."

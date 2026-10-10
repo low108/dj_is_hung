@@ -131,7 +131,8 @@ def parse_choice_letter(sample: str, letters: Sequence[str]) -> str | None:
     return None
 
 
-CHOICE_TEMPERATURE = 0.5  # first attempt; each retry adds 0.1
+CHOICE_TEMPERATURE = 0.5  # first attempt
+CHOICE_RETRY_STEP = 0.1   # added per retry when a reply has no valid letter
 TEXT_TEMPERATURE = 1.0    # speech and reflections
 CHOICE_HINT = "\n(Reply with only the letter of the chosen option.)\nAnswer: ("
 
@@ -142,7 +143,7 @@ def language_model_choice(model: CountingModel, prompt: str, responses: Sequence
     hinted = prompt + CHOICE_HINT
     sample = ""
     for attempt in range(5):
-        sample = model.sample_text(hinted, max_tokens=8, temperature=CHOICE_TEMPERATURE + 0.1 * attempt)
+        sample = model.sample_text(hinted, max_tokens=8, temperature=CHOICE_TEMPERATURE + CHOICE_RETRY_STEP * attempt)
         letter = parse_choice_letter(sample, responses)
         if letter:
             return responses.index(letter), letter, {"attempts": attempt + 1}
