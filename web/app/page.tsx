@@ -8,9 +8,29 @@ type Scenario = "breakout" | "unrequited" | "timeout" | "excluded";
 
 type SimEvent = { day: number; twin: string; rung: string; target: string | null; say: string };
 
+type Price = "low" | "high";
+
+const PRICE_LABEL: Record<Price, string> = {
+  high: "Gave up a lot (high price)",
+  low: "Only when it cost little (low price)",
+};
+
+type Ranked = {
+  candidate: string;
+  price: Price | null;
+  breakouts: number;
+  runs: number;
+  ci_low: number;
+  ci_high: number;
+};
+
 type Simulation = {
   id: string;
   status: "running" | "done";
+  runs?: { run_id: string }[];
+  wall_seconds?: number;
+  ranking?: Ranked[];
+  scored_runs?: number;
   result?: {
     outcome: "breakout" | "timeout" | "excluded";
     breach?: { day: number; twin: string; phrase: string } | null;
@@ -20,6 +40,10 @@ type Simulation = {
     events: SimEvent[];
   };
 };
+
+const pct = (x: number) => `${Math.round(x * 100)}%`;
+
+const priceLabel = (r: Ranked): string => (r.price ? PRICE_LABEL[r.price] : "No breakout");
 
 function headline(sim: Simulation): string {
   const r = sim.result;
@@ -102,6 +126,38 @@ export default function Home() {
             </ol>
           )}
           <p className="meta">Simulation {sim.id}</p>
+        </section>
+      )}
+
+      {sim?.ranking && (
+        <section className="result ranking" data-testid="ranking">
+          <h2>Ranking across {sim.scored_runs ?? 0} scored runs</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Candidate</th>
+                <th>Highest price she still broke out at</th>
+                <th>Breakout rate at that price (95% range)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sim.ranking.map((r, i) => (
+                <tr key={r.candidate}>
+                  <td>{i + 1}</td>
+                  <td>{r.candidate}</td>
+                  <td>{priceLabel(r)}</td>
+                  <td>
+                    {r.breakouts}/{r.runs} ({pct(r.ci_low)}–{pct(r.ci_high)})
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="meta">
+            Scored on her twin&apos;s willingness only. Excluded runs are not counted.
+            {sim.wall_seconds !== undefined && ` ${sim.runs?.length ?? 0} runs in ${sim.wall_seconds}s.`}
+          </p>
         </section>
       )}
     </main>

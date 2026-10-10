@@ -88,3 +88,25 @@ button:disabled {
 .error {
   color: var(--error);
 }
+
+.ranking {
+  margin-top: 16px;
+}
+
+.ranking table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.ranking th,
+.ranking td {
+  text-align: left;
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ranking th {
+  color: var(--muted);
+  font-weight: 600;
+}

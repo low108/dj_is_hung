@@ -15,6 +15,7 @@ PERSONAS = {
 }
 WOMAN, MAN = "Mara", "Ren"  # MAN is who the scripted fake scenarios use
 POOL = tuple(Twin(n, "f" if n == WOMAN else "m") for n in PERSONAS)
+MEN = [t.alias for t in POOL if t.alias != WOMAN]
 
 FAKE_MODELS = ["fake:a", "fake:b", "fake:c"]  # three stand-ins for the three-model ensemble (F4)
 
