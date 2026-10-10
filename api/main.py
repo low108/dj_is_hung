@@ -18,7 +18,7 @@ WOMAN, MAN = "Mara", "Ren"  # tracer-bullet twins; real twins arrive with D1/D4
 
 
 class StartSimulation(BaseModel):
-    scenario: Literal["breakout", "unrequited", "timeout"] = "breakout"
+    scenario: Literal["breakout", "unrequited", "timeout", "excluded"] = "breakout"
     max_days: int = 10
     seed: int = 0
 

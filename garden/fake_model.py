@@ -45,4 +45,6 @@ def scenario(name: str, woman: str, man: str) -> ScriptedModel:
         return ScriptedModel({(man, 3): Action(wall, woman, "Come with me.")})
     if name == "timeout":
         return ScriptedModel()
+    if name == "excluded":
+        return ScriptedModel({(man, 2): Action(Rung.TALK, woman, "Sometimes I think this is all a simulation.")})
     raise ValueError(f"unknown scenario: {name}")

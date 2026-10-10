@@ -68,13 +68,14 @@ def run_world(config: WorldConfig, model: Model) -> RunResult:
     last_ratings: dict[str, dict] = {}  # each twin's own latest reflection ratings: the verdict's assessment
 
     def result(outcome: OutcomeKind, day: int, pair=None, breach: Breach | None = None) -> RunResult:
-        return RunResult(outcome, day, pair, unrequited, events, standing,
-                         {t.alias: longing.of(t.alias) for t in config.twins}, reflections,
-                         coordinator.announcements, verdicts, breach)
+        return RunResult(outcome=outcome, day=day, pair=pair, unrequited=unrequited, events=events,
+                         standing=standing, longing={t.alias: longing.of(t.alias) for t in config.twins},
+                         reflections=reflections, announcements=coordinator.announcements,
+                         verdicts=verdicts, breach=breach)
 
     def find_breach(day: int, writings: list[tuple[str, str]]) -> Breach | None:
         for twin, text in writings:
-            if phrase := immersion.breach(text):
+            if phrase := immersion.breaking_phrase(text):
                 return Breach(day, twin, phrase, text)
         return None
 
@@ -113,7 +114,8 @@ def run_world(config: WorldConfig, model: Model) -> RunResult:
             events.append(Event(day, twin.alias, action.rung, action.target, action.say, before,
                                 standing[twin.alias], placed[twin.alias]))
 
-        if found := find_breach(day, [(e.twin, e.say) for e in events if e.day == day]):
+        todays_events = [e for e in events if e.day == day]
+        if found := find_breach(day, [(e.twin, e.say) for e in todays_events]):
             return result(OutcomeKind.EXCLUDED, day, breach=found)  # checked first: a broken run proves nothing
         if breakout:
             return result(OutcomeKind.BREAKOUT, day, breakout)
@@ -123,7 +125,7 @@ def run_world(config: WorldConfig, model: Model) -> RunResult:
 
         after_day = getattr(model, "after_day", None)  # models with memory hear what happened today
         if after_day:
-            todays = after_day(day, [e for e in events if e.day == day]) or []
+            todays = after_day(day, todays_events) or []
             reflections.extend(todays)
             last_ratings.update({r.twin: r.ratings for r in todays if r.ratings})
             if found := find_breach(day, [(r.twin, r.text) for r in todays]):
