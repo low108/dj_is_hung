@@ -60,6 +60,8 @@ class ConcordiaTwins:
         agent.observe(f"Day {day} in the Garden. People around: {', '.join(names)}.")
         if situation and situation.standing:
             agent.observe(f"Day {day}: {situation.standing}")
+        if situation and situation.schedule:
+            agent.observe(f"Day {day}: {situation.schedule}")
         if situation and situation.longing:
             agent.observe(f"Day {day}: {situation.longing}")
 
