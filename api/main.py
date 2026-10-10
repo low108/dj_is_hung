@@ -29,8 +29,10 @@ def serialize(result) -> dict:
         "day": result.day,
         "pair": list(result.pair) if result.pair else None,
         "unrequited": [{"day": a.day, "twin": a.twin, "target": a.target} for a in result.unrequited],
+        "standing": result.standing,
         "events": [
-            {"day": e.day, "twin": e.twin, "rung": e.rung.value, "target": e.target, "say": e.say}
+            {"day": e.day, "twin": e.twin, "rung": e.rung.value, "target": e.target, "say": e.say,
+             "standing_before": e.standing_before, "standing_after": e.standing_after}
             for e in result.events
         ],
     }

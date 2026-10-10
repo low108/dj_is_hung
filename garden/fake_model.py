@@ -1,7 +1,7 @@
 """A scripted model for tests and local demos: no API calls, fully deterministic."""
 from __future__ import annotations
 
-from .engine import Action, Rung, Twin
+from .engine_types import Action, Rung, Situation, Twin
 
 
 class ScriptedModel:
@@ -10,7 +10,7 @@ class ScriptedModel:
     def __init__(self, script: dict[tuple[str, int], Action] | None = None):
         self.script = script or {}
 
-    def choose_action(self, twin: Twin, day: int, others: tuple[Twin, ...]) -> Action:
+    def choose_action(self, twin: Twin, day: int, others: tuple[Twin, ...], situation: Situation | None = None) -> Action:
         return self.script.get((twin.alias, day), Action(Rung.TALK, others[0].alias if others else None, "Hello."))
 
 
