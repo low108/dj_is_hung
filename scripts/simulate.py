@@ -13,7 +13,6 @@ from dotenv import load_dotenv
 
 from garden import demo
 from garden import pools as pool_lib
-from garden import speed_dating as sd
 from garden.batch import PriceLevel, plan, run_simulation
 from garden.runlog import write_simulation
 from garden.scoring import score
@@ -30,12 +29,10 @@ def main() -> None:
     args = p.parse_args()
 
     specs = plan(args.models, list(PriceLevel), args.seeds)
-    if args.pool is not None:
-        pool = pool_lib.load_pool(sd.load(), args.pool)
-        twins, personas, woman, men = pool.twins, pool.personas, pool.woman.alias, pool.men_aliases
+    pool = pool_lib.resolve(args.pool)
+    twins, personas, woman, men = pool.twins, pool.personas, pool.woman, pool.men
+    if pool.matched is not None:
         print(f"Pool {args.pool}: {woman} with {', '.join(men)} (real matches: {', '.join(sorted(pool.matched))})")
-    else:
-        pool, twins, personas, woman, men = None, demo.POOL, demo.PERSONAS, demo.WOMAN, demo.MEN
     sim = run_simulation(specs, twins, lambda spec: demo.make_twin_model(spec, personas),
                          parallelism=args.parallelism, max_days=args.days)
 
@@ -58,7 +55,7 @@ def main() -> None:
     for i, c in enumerate(ranking, 1):
         print(f"  {i}. {c.candidate:8s} {c.price.value if c.price else 'never':5s} {c.breakouts}/{c.runs} "
               f"({c.ci_low:.0%}-{c.ci_high:.0%})")
-    if pool is not None:
+    if pool.matched is not None:
         check = pool_lib.check_ranking(ranking, pool.matched)
         print(f"answer key: matches on top = {check.matches_on_top}, pairs in order = {check.pairs_in_order:.0%} (50% = chance)")
 

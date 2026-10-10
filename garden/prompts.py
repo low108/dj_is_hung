@@ -14,15 +14,18 @@ from .longing import LONGING_WORDS
 
 
 def prompt_texts() -> dict:
-    from .concordia_twins import REFLECTION_PROMPT  # imports Concordia; only needed when versioning
+    from .concordia_twins import (  # imports Concordia; only needed when versioning
+        RATINGS_WITH_STANDING, RATINGS_WITHOUT_STANDING, REFLECTION_PROMPT)
     from .llm import CHOICE_HINT
 
     return {
-        "world_memories": list(world_text.WORLD_MEMORIES),
+        "base_memories": list(world_text.BASE_MEMORIES),
+        "standing_memories": list(world_text.STANDING_MEMORIES),
         "rung_options": dict(world_text.RUNG_OPTIONS),
         "templates": {k: getattr(world_text, k) for k in (
             "OBSERVE_DAY", "OBSERVE_NOTE", "OBSERVE_SAID", "OBSERVE_REFLECTION", "ASK_ACTION", "ASK_TARGET", "ASK_SPEECH")},
         "reflection_prompt": REFLECTION_PROMPT,
+        "reflection_ratings": [RATINGS_WITH_STANDING, RATINGS_WITHOUT_STANDING],
         "choice_hint": CHOICE_HINT,
         # every distinct sentence the Standing bands produce, derived from the function itself
         "standing_words": sorted({standing.describe(v) for v in range(standing.START + 1)}),

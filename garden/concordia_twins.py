@@ -12,7 +12,8 @@ from .engine_types import Action, Event, Reflection, Rung, Situation, Twin
 from .verdict import GATED_RUNGS
 from .llm import hash_embedder
 from .world_text import (ASK_ACTION, ASK_SPEECH, ASK_TARGET, NEEDS_TARGET, OBSERVE_DAY, OBSERVE_NOTE,
-                         OBSERVE_REFLECTION, OBSERVE_SAID, RUNG_OPTIONS, SPEAKS, WORLD_MEMORIES)
+                         OBSERVE_REFLECTION, OBSERVE_SAID, RUNG_OPTIONS, SPEAKS, BASE_MEMORIES,
+                         STANDING_MEMORIES)
 
 _OPTION_TO_RUNG = {text: Rung(key) for key, text in RUNG_OPTIONS.items()}
 
@@ -50,20 +51,22 @@ class ConcordiaTwins:
         self._model = model
         self._personas = personas or {}
         self._agents: dict[str, object] = {}
+        self._standing_in_play: dict[str, bool] = {}
 
-    def _agent(self, twin: Twin):
+    def _agent(self, twin: Twin, standing_in_play: bool = True):
         if twin.alias not in self._agents:
             bank = basic_associative_memory.AssociativeMemoryBank(sentence_embedder=hash_embedder)
-            for memory in WORLD_MEMORIES:
+            for memory in BASE_MEMORIES + (STANDING_MEMORIES if standing_in_play else ()):
                 bank.add(memory)
             for line in self._personas.get(twin.alias, "").splitlines():
                 if line.strip():
                     bank.add(line.strip())
             self._agents[twin.alias] = minimal.Entity(params={"name": twin.alias}).build(self._model, bank)
+            self._standing_in_play[twin.alias] = standing_in_play
         return self._agents[twin.alias]
 
     def choose_action(self, twin: Twin, day: int, others: tuple[Twin, ...], situation: Situation | None = None) -> Action:
-        agent = self._agent(twin)
+        agent = self._agent(twin, situation.standing_in_play if situation else True)
         names = [o.alias for o in others]
         agent.observe(OBSERVE_DAY.format(day=day, people=", ".join(names)))
         if situation and situation.standing:
@@ -106,7 +109,9 @@ class ConcordiaTwins:
         reflections = []
         for alias, agent in self._agents.items():
             raw = agent.act(entity_lib.ActionSpec(
-                call_to_action=REFLECTION_PROMPT.format(day=day),
+                call_to_action=REFLECTION_PROMPT.format(
+                    day=day, ratings=RATINGS_WITH_STANDING if self._standing_in_play.get(alias, True)
+                    else RATINGS_WITHOUT_STANDING),
                 output_type=entity_lib.OutputType.FREE,
             ))
             text, ratings = parse_reflection(alias, raw)
@@ -119,8 +124,10 @@ class ConcordiaTwins:
 REFLECTION_PROMPT = (
     "It is the end of day {day}. In two or three sentences, {{name}} writes privately about their life here, "
     "their current situation and anyone on their mind. Then, on a new line, {{name}} writes exactly: "
-    "Ratings: longing=<1-10>; trust=<1-10>; standing_matters=<1-10>; on_my_mind=<a name or none>"
+    "Ratings: {ratings}"
 )
+RATINGS_WITH_STANDING = "longing=<1-10>; trust=<1-10>; standing_matters=<1-10>; on_my_mind=<a name or none>"
+RATINGS_WITHOUT_STANDING = "longing=<1-10>; trust=<1-10>; on_my_mind=<a name or none>"
 
 
 def parse_reflection(alias: str, raw: str) -> tuple[str, dict]:
