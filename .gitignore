@@ -25,3 +25,7 @@ ui-debug.log
 
 # Datasets (download separately; not redistributed)
 data/raw/
+
+# Local run logs and prompt versions (BigQuery after A3)
+data/runs/
+data/prompts/

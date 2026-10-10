@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import time
 from collections import Counter
 
 from dotenv import load_dotenv
@@ -14,6 +15,7 @@ from garden import demo
 from garden import pools as pool_lib
 from garden import speed_dating as sd
 from garden.batch import PriceLevel, plan, run_simulation
+from garden.runlog import write_simulation
 from garden.scoring import score
 
 
@@ -48,6 +50,8 @@ def main() -> None:
             outcome += f' — {res.breach.twin}: "{res.breach.phrase}" in "{res.breach.text[:120]}"'
         outcome += f" | gate permitted {sum(v.permitted for v in res.verdicts)}/{len(res.verdicts)} twin-days"
         print(f"  {r.spec.run_id} {r.spec.model:24s} {r.spec.price.value:4s} seed {r.spec.seed}: {outcome}")
+    log_dir = write_simulation(f"sim-{int(time.time())}", sim, woman, men)
+    print(f"logs: {log_dir}")
     pairs = Counter("+".join(r.result.pair) for r in sim.scorable if r.result.pair)
     print("breakouts:", dict(pairs) or "none", "| excluded:", sum(1 for r in sim.records if r.result and not r.result.scorable))
     ranking = score(list(sim.records), woman, men)
