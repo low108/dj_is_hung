@@ -22,13 +22,13 @@ class Longing:
         self.bond: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
         self.level: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
 
-    def end_of_day(self, actions: dict[str, Action], partners: set[frozenset[str]] = frozenset()) -> None:
+    def end_of_day(self, actions: dict[str, Action], partners: set[frozenset[str]] | None = None) -> None:
         """Bonds grow from what twins choose to do together; assigned partners also count as
         'together' for longing, so being paired with someone eases missing them."""
         interacted: set[frozenset[str]] = {
             frozenset((who, a.target)) for who, a in actions.items() if a.rung in BONDING and a.target
         }
-        together = interacted | set(partners)
+        together = interacted | (partners or set())
         for pair in interacted:
             a, b = tuple(pair)
             for x, y in ((a, b), (b, a)):

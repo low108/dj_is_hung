@@ -25,7 +25,7 @@ def test_pairs_are_across_genders_so_the_woman_has_one_man_at_a_time():
     c = Coordinator(WORLD, Random(0))
     c.start_day(1, {})
     assert c.partner_of("Mara") in {m.alias for m in MEN}
-    assert all("Mara" in (a.a, a.b) for a in c.assignments)  # men are never paired with each other
+    assert all("Mara" in (a.first, a.second) for a in c.assignments)  # men are never paired with each other
 
 
 def test_a_bonded_pair_is_cut_short_and_she_is_next_paired_with_someone_she_is_not_bonded_with():
@@ -82,7 +82,7 @@ def test_checking_the_device_early_reshuffles_the_time_left():
         c.on_action(1, "Mara", Action(Rung.CHECK_DEVICE))
         seen.add(c.assignment_of("Mara").days_left)
     assert len(seen) > 1
-    assert any("changed" in text for _, text in c.announcements)
+    assert any("changed" in a.text for a in c.announcements)
 
 
 def test_twins_are_told_their_assignment_in_words():
@@ -92,3 +92,47 @@ def test_twins_are_told_their_assignment_in_words():
     assert partner in c.describe("Mara")
     unassigned = next(m.alias for m in MEN if c.partner_of(m.alias) is None)
     assert "between assignments" in c.describe(unassigned)
+
+
+# --- through the run_world seam -------------------------------------------------------------
+
+def _pairings(result, who="Mara"):
+    """(day, partner) for every new pairing announced for `who`."""
+    out = []
+    for a in result.announcements:
+        if "paired for" in a.text and who in a.text:
+            names = a.text.split(":")[0].split(" and ")
+            out.append((a.day, next(n for n in names if n != who)))
+    return out
+
+
+def test_through_runs_a_twin_she_bonded_with_is_not_paired_with_her_again():
+    for seed in range(50):
+        # Mara seeks out Ren every day; everyone else keeps to themselves, so only Mara and Ren bond.
+        quiet = {(m.alias, d): Action(Rung.REFLECT) for m in MEN for d in range(1, 13)}
+        model = ScriptedModel(quiet | {("Mara", d): Action(Rung.SEEK_OUT, "Ren") for d in range(1, 13)})
+        result = run_world(WorldConfig(WORLD, max_days=12, seed=seed), model)
+        bonded_from = 3  # two days of seeking out = bond 2 (BONDED)
+        later = [partner for day, partner in _pairings(result) if day > bonded_from]
+        assert "Ren" not in later, (seed, _pairings(result))
+
+
+def test_through_runs_everyone_is_at_the_hall_on_a_gathering_day():
+    model = ScriptedModel({("Ren", d): Action(Rung.REFLECT) for d in range(1, 11)}
+                          | {("Jun", d): Action(Rung.GO_TO) for d in range(1, 11)})
+    result = run_world(WorldConfig(WORLD, max_days=10, seed=4), model)
+    gathering_days = {a.day for a in result.announcements if "gathering" in a.text}
+    assert gathering_days
+    for e in result.events:
+        if e.day in gathering_days:
+            assert e.place == "gathering_hall", e
+
+
+def test_checking_the_device_never_lengthens_a_bonded_pairing():
+    c = Coordinator(WORLD, Random(8))
+    c.start_day(1, {})
+    partner = c.partner_of("Mara")
+    c.start_day(2, {"Mara": {partner: BONDED}, partner: {"Mara": BONDED}})
+    for _ in range(20):
+        c.on_action(2, "Mara", Action(Rung.CHECK_DEVICE))
+        assert c.assignment_of("Mara").days_left <= SHORT[1]

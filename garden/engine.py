@@ -9,7 +9,7 @@ from random import Random
 from typing import Protocol
 
 from . import standing as standing_rules
-from .engine_types import Action, Attempt, Event, OutcomeKind, Reflection, Rung, Situation, Twin
+from .engine_types import Action, Announcement, Attempt, Event, OutcomeKind, Reflection, Rung, Situation, Twin
 from .coordinator import Coordinator
 from .longing import Longing
 
@@ -38,7 +38,7 @@ class RunResult:
     standing: dict[str, int] = field(default_factory=dict)  # at the end of the run
     longing: dict[str, dict[str, float]] = field(default_factory=dict)  # at the end of the run
     reflections: list[Reflection] = field(default_factory=list)
-    announcements: list[tuple[int, str]] = field(default_factory=list)  # Coordinator, for the viewer
+    announcements: list[Announcement] = field(default_factory=list)  # Coordinator, for the viewer
 
 
 def run_world(config: WorldConfig, model: Model) -> RunResult:
@@ -65,7 +65,7 @@ def run_world(config: WorldConfig, model: Model) -> RunResult:
             others = tuple(t for t in config.twins if t != twin)
             situation = Situation(standing=standing_rules.describe(standing[twin.alias]),
                                   longing=longing.describe(twin.alias),
-                                  assignment=coordinator.describe(twin.alias))
+                                  schedule=coordinator.describe(twin.alias))
             actions[twin.alias] = action = model.choose_action(twin, day, others, situation)
             coordinator.on_action(day, twin.alias, action)
             if action.rung is Rung.GO_BEYOND_WALL and action.target:

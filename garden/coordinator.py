@@ -4,27 +4,52 @@ and places every action somewhere in the Garden. Rule-based and seeded, so runs 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from random import Random
 
-from .engine_types import Action, Rung, Twin
+from .engine_types import Action, Announcement, Rung, Twin
 
-PLACES = ("home", "cafe", "park", "gathering_hall", "coordinator_office", "the_wall")
-PLACE_WORDS = {"home": "home", "cafe": "the café", "park": "the park", "gathering_hall": "the gathering hall",
-               "coordinator_office": "the Coordinator's office", "the_wall": "the wall"}
+Bonds = dict[str, dict[str, float]]
 
-BONDED = 2.0               # bond at which the Coordinator moves to separate a pair
+
+class Place(str, Enum):
+    HOME = "home"
+    CAFE = "cafe"
+    PARK = "park"
+    GATHERING_HALL = "gathering_hall"
+    COORDINATOR_OFFICE = "coordinator_office"
+    THE_WALL = "the_wall"
+
+
+PLACES = tuple(p.value for p in Place)
+
+BONDED = 2.0               # bond at which the Coordinator moves to keep a pair apart
 SHORT, LONG = (1, 2), (3, 4)
+RESHUFFLE = (1, 4)         # checking the device early re-rolls the time left within this range
 GATHERING_RATE = 0.3
+
+
+def bond_between(bonds: Bonds, x: str, y: str) -> float:
+    """Bonds are symmetric in practice; take the stronger side so one twin's view is enough."""
+    return max(bonds.get(x, {}).get(y, 0.0), bonds.get(y, {}).get(x, 0.0))
 
 
 @dataclass
 class Assignment:
-    a: str
-    b: str
+    first: str
+    second: str
     days_left: int
 
     def partner_of(self, who: str) -> str | None:
-        return self.b if who == self.a else self.a if who == self.b else None
+        if who == self.first:
+            return self.second
+        if who == self.second:
+            return self.first
+        return None
+
+    @property
+    def names(self) -> str:
+        return f"{self.first} and {self.second}"
 
 
 @dataclass
@@ -32,85 +57,98 @@ class Coordinator:
     twins: tuple[Twin, ...]
     rng: Random
     assignments: list[Assignment] = field(default_factory=list)
-    announcements: list[tuple[int, str]] = field(default_factory=list)
+    announcements: list[Announcement] = field(default_factory=list)
     gathering_today: bool = False
+    _bonds: Bonds = field(default_factory=dict)
+
+    def _announce(self, day: int, text: str) -> None:
+        self.announcements.append(Announcement(day, text))
 
     # --- daily schedule -------------------------------------------------------------------
-    def start_day(self, day: int, bond: dict[str, dict[str, float]]) -> None:
-        """Expire finished assignments, separate bonded pairs, pair up the unassigned."""
-        for asg in list(self.assignments):
-            if asg.days_left <= 0:
-                self.assignments.remove(asg)
-                self.announcements.append((day, f"{asg.a} and {asg.b}: your time together has ended."))
-            elif bond.get(asg.a, {}).get(asg.b, 0) >= BONDED and asg.days_left > SHORT[1]:
-                asg.days_left = self.rng.randint(*SHORT)  # bonded: cut it short
-                self.announcements.append((day, f"{asg.a} and {asg.b}: {asg.days_left} more day(s)."))
-        self._pair_unassigned(day, bond)
+    def start_day(self, day: int, bonds: Bonds) -> None:
+        """Expire finished assignments, cut bonded pairs short, pair up the unassigned."""
+        self._bonds = bonds
+        for pair in list(self.assignments):
+            if pair.days_left <= 0:
+                self.assignments.remove(pair)
+                self._announce(day, f"{pair.names}: your time together has ended.")
+            elif self._bonded(pair.first, pair.second) and pair.days_left > SHORT[1]:
+                pair.days_left = self.rng.randint(*SHORT)
+                self._announce(day, f"{pair.names}: {pair.days_left} more day(s).")
+        self._pair_unassigned(day)
         self.gathering_today = self.rng.random() < GATHERING_RATE
         if self.gathering_today:
-            self.announcements.append((day, "Tonight there is a gathering at the hall. Everyone attends."))
+            self._announce(day, "Tonight there is a gathering at the hall. Everyone attends.")
 
     def end_day(self) -> None:
-        for asg in self.assignments:
-            asg.days_left -= 1
+        for pair in self.assignments:
+            pair.days_left -= 1
 
-    def _pair_unassigned(self, day: int, bond: dict[str, dict[str, float]]) -> None:
+    def _bonded(self, x: str, y: str) -> bool:
+        return bond_between(self._bonds, x, y) >= BONDED
+
+    def _pair_unassigned(self, day: int) -> None:
+        """Choose pairs globally, least-bonded first, so a bonded pair is only re-paired when
+        there is no one else. (Choosing per twin let whoever was picked first decide.)"""
         free = [t for t in self.twins if self.partner_of(t.alias) is None]
-        self.rng.shuffle(free)
-        while free:
-            twin = free.pop()
-            options = [o for o in free if _compatible(twin, o)]
-            if not options:
+        candidates = [(a, b) for i, a in enumerate(free) for b in free[i + 1:] if _compatible(a, b)]
+        self.rng.shuffle(candidates)  # random tie-break: who goes first varies per run
+        candidates.sort(key=lambda ab: bond_between(self._bonds, ab[0].alias, ab[1].alias))
+        taken: set[str] = set()
+        for a, b in candidates:
+            if a.alias in taken or b.alias in taken:
                 continue
-            # Prefer whoever this twin is LEAST bonded with: the Coordinator keeps bonded people apart.
-            self.rng.shuffle(options)
-            other = min(options, key=lambda o: bond.get(twin.alias, {}).get(o.alias, 0.0))
-            free.remove(other)
-            bonded = bond.get(twin.alias, {}).get(other.alias, 0.0) >= BONDED
-            days = self.rng.randint(*(SHORT if bonded else LONG))
-            self.assignments.append(Assignment(twin.alias, other.alias, days))
-            self.announcements.append((day, f"{twin.alias} and {other.alias}: paired for {days} day(s)."))
+            taken |= {a.alias, b.alias}
+            days = self.rng.randint(*(SHORT if self._bonded(a.alias, b.alias) else LONG))
+            self.assignments.append(Assignment(a.alias, b.alias, days))
+            self._announce(day, f"{a.alias} and {b.alias}: paired for {days} day(s).")
 
     # --- queries ----------------------------------------------------------------------------
     def assignment_of(self, who: str) -> Assignment | None:
-        return next((a for a in self.assignments if a.partner_of(who)), None)
+        return next((p for p in self.assignments if p.partner_of(who)), None)
 
     def partner_of(self, who: str) -> str | None:
-        asg = self.assignment_of(who)
-        return asg.partner_of(who) if asg else None
+        pair = self.assignment_of(who)
+        return pair.partner_of(who) if pair else None
 
     def partner_pairs(self) -> set[frozenset[str]]:
-        return {frozenset((a.a, a.b)) for a in self.assignments}
+        return {frozenset((p.first, p.second)) for p in self.assignments}
 
     def describe(self, who: str) -> str:
-        asg = self.assignment_of(who)
-        text = (f"The Coordinator has paired you with {asg.partner_of(who)} "
-                f"for {'one more day' if asg.days_left <= 1 else f'{asg.days_left} more days'}."
-                if asg else "You are between assignments.")
+        """A twin's schedule in words: its assignment, plus tonight's gathering if there is one."""
+        pair = self.assignment_of(who)
+        text = (f"The Coordinator has paired you with {pair.partner_of(who)} "
+                f"for {'one more day' if pair.days_left <= 1 else f'{pair.days_left} more days'}."
+                if pair else "You are between assignments.")
         if self.gathering_today:
             text += " Tonight there is a gathering at the hall."
         return text
 
     # --- actions -------------------------------------------------------------------------------
     def on_action(self, day: int, who: str, action: Action) -> None:
-        if action.rung is Rung.CHECK_DEVICE and (asg := self.assignment_of(who)):
-            asg.days_left = self.rng.randint(1, LONG[1])  # checking early changes things
-            self.announcements.append((day, f"{asg.a} and {asg.b}: your time has been changed."))
+        if action.rung is Rung.CHECK_DEVICE and (pair := self.assignment_of(who)):
+            # Checking early changes things, but never lets a bonded pair stay together longer.
+            span = SHORT if self._bonded(pair.first, pair.second) else RESHUFFLE
+            pair.days_left = self.rng.randint(*span)
+            self._announce(day, f"{pair.names}: your time has been changed.")
 
     def place_for(self, who: str, action: Action, placed: dict[str, str]) -> str:
-        """Where an action happens. Social actions join the target if they've already been placed."""
+        """Where an action happens. On a gathering day everyone is at the hall (unless at the wall);
+        otherwise social actions join the target if the target has already been placed."""
         rung = action.rung
         if rung is Rung.GO_BEYOND_WALL:
-            return "the_wall"
+            return Place.THE_WALL.value
+        if self.gathering_today:
+            return Place.GATHERING_HALL.value
         if rung in (Rung.REFLECT, Rung.CHECK_DEVICE):
-            return "home"
-        if self.gathering_today and rung in (Rung.TALK, Rung.SEEK_OUT):
-            return "gathering_hall"
-        if action.target and action.target in placed and placed[action.target] not in ("home", "the_wall"):
-            return placed[action.target]
+            return Place.HOME.value
+        target_place = placed.get(action.target or "")
+        if target_place and target_place not in (Place.HOME.value, Place.THE_WALL.value):
+            return target_place
         if rung is Rung.PROPOSE_LEAVING:
-            return "park"
-        return self.rng.choice(("cafe", "park", "coordinator_office") if rung is Rung.GO_TO else ("cafe", "park"))
+            return Place.PARK.value
+        options = (Place.CAFE, Place.PARK, Place.COORDINATOR_OFFICE) if rung is Rung.GO_TO else (Place.CAFE, Place.PARK)
+        return self.rng.choice(options).value
 
 
 def _compatible(a: Twin, b: Twin) -> bool:

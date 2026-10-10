@@ -69,7 +69,7 @@ def main() -> None:
         "rungs": {r: sum(e.rung.value == r for e in result.events) for r in sorted({e.rung.value for e in result.events})},
         "sample_lines": [f"Day {e.day} {e.twin} -> {e.target}: {e.say}" for e in result.events if e.say][:6],
         "places": {pl: sum(e.place == pl for e in result.events) for pl in sorted({e.place for e in result.events})},
-        "announcements": [f"Day {d}: {t}" for d, t in result.announcements][:8],
+        "announcements": [f"Day {a.day}: {a.text}" for a in result.announcements][:8],
         "reflections": len(result.reflections),
         "reflections_with_ratings": sum(bool(r.ratings) for r in result.reflections),
         "sample_reflections": [f"Day {r.day} {r.twin}: {r.text} {r.ratings}" for r in result.reflections[-3:]],

@@ -31,7 +31,7 @@ def serialize(result) -> dict:
         "unrequited": [{"day": a.day, "twin": a.twin, "target": a.target} for a in result.unrequited],
         "standing": result.standing,
         "longing": {who: {n: round(v, 2) for n, v in d.items()} for who, d in result.longing.items()},
-        "announcements": [{"day": d, "text": t} for d, t in result.announcements],
+        "announcements": [{"day": a.day, "text": a.text} for a in result.announcements],
         "reflections": [{"day": r.day, "twin": r.twin, "text": r.text, "ratings": r.ratings}
                         for r in result.reflections],
         "events": [

@@ -3,6 +3,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import Literal
+
+Gender = Literal["f", "m", ""]
 
 
 class Rung(str, Enum):
@@ -20,7 +23,7 @@ class Rung(str, Enum):
 @dataclass(frozen=True)
 class Twin:
     alias: str
-    gender: str = ""  # "f" / "m"; when set, the Coordinator pairs across genders
+    gender: Gender = ""  # when set, the Coordinator pairs across genders
 
 
 @dataclass(frozen=True)
@@ -36,7 +39,7 @@ class Situation:
 
     standing: str = ""
     longing: str = ""
-    assignment: str = ""
+    schedule: str = ""  # the Coordinator's word: current assignment and tonight's gathering
 
 
 class OutcomeKind(str, Enum):
@@ -73,3 +76,11 @@ class Reflection:
     twin: str
     text: str
     ratings: dict[str, int | str]
+
+
+@dataclass(frozen=True)
+class Announcement:
+    """Something the Coordinator announced, for logs and the viewer."""
+
+    day: int
+    text: str
