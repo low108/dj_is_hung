@@ -67,6 +67,10 @@ def main() -> None:
         },
         "rungs": {r: sum(e.rung.value == r for e in result.events) for r in sorted({e.rung.value for e in result.events})},
         "sample_lines": [f"Day {e.day} {e.twin} -> {e.target}: {e.say}" for e in result.events if e.say][:6],
+        "reflections": len(result.reflections),
+        "reflections_with_ratings": sum(bool(r.ratings) for r in result.reflections),
+        "sample_reflections": [f"Day {r.day} {r.twin}: {r.text} {r.ratings}" for r in result.reflections[-3:]],
+        "longing_end": {k: {n: round(v, 1) for n, v in d.items() if v >= 0.5} for k, d in result.longing.items()},
     }
     print(json.dumps(report, indent=2))
 
