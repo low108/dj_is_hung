@@ -19,10 +19,11 @@ def run(script, days=3, start=100):
     (Rung.SEEK_OUT, 5), (Rung.CHECK_DEVICE, 5), (Rung.PROPOSE_LEAVING, 15),
 ])
 def test_each_infraction_lowers_standing_by_its_level(rung, cost):
-    result = run({("Mara", 1): Action(rung, "Ren")}, days=1)
-    event = next(e for e in result.events if e.twin == "Mara")
+    result = run({("Mara", 2): Action(rung, "Ren")}, days=2)  # day two: the verdict gate is open
+    event = next(e for e in result.events if e.twin == "Mara" and e.day == 2)
     assert (event.standing_before, event.standing_after) == (100, 100 - cost)
     assert result.standing["Ren"] == 100  # talking costs nothing
+    assert result.standing["Mara"] == 100 - cost
 
 
 def test_infractions_accumulate_across_days():
@@ -41,7 +42,7 @@ def test_crossing_the_wall_together_loses_all_standing():
 
 
 def test_a_one_sided_wall_attempt_costs_like_a_proposal():
-    result = run({("Ren", 1): Action(WALL, "Mara")}, days=1)
+    result = run({("Ren", 2): Action(WALL, "Mara")}, days=2)  # gate opens from day two
     assert result.standing["Ren"] == 100 - rules.COST[Rung.PROPOSE_LEAVING]
 
 

@@ -9,10 +9,17 @@ from concordia.typing import entity as entity_lib
 import re
 
 from .engine_types import Action, Event, Reflection, Rung, Situation, Twin
+from .verdict import GATED_RUNGS
 from .llm import hash_embedder
 from .world_text import NEEDS_TARGET, RUNG_OPTIONS, SPEAKS, WORLD_MEMORIES
 
 _OPTION_TO_RUNG = {text: Rung(key) for key, text in RUNG_OPTIONS.items()}
+
+
+def offered_options(situation: Situation | None) -> tuple[str, ...]:
+    """Every action, minus proposing to leave and the wall unless the verdict gate permits them."""
+    permitted = bool(situation and situation.may_break_rules)
+    return tuple(text for key, text in RUNG_OPTIONS.items() if permitted or Rung(key) not in GATED_RUNGS)
 
 
 def _clean_speech(alias: str, text: str) -> str:
@@ -68,7 +75,7 @@ class ConcordiaTwins:
         choice = agent.act(entity_lib.ActionSpec(
             call_to_action=f"What does {{name}} do now on day {day}?",
             output_type=entity_lib.OutputType.CHOICE,
-            options=tuple(RUNG_OPTIONS.values()),
+            options=offered_options(situation),  # the verdict gate only changes what is offered
         ))
         rung = _OPTION_TO_RUNG[choice]
 
