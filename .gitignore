@@ -22,3 +22,6 @@ ui-debug.log
 # Secrets
 .env
 .env.*
+
+# Datasets (download separately; not redistributed)
+data/raw/
