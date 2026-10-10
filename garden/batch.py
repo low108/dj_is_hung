@@ -18,11 +18,15 @@ from .engine_types import Twin
 
 
 class PriceLevel(str, Enum):
+    """How much a twin would give up by crossing the wall. Twins start with this much Standing and
+    build it up by keeping to the rules, so a high price means Pairing Day is close."""
+
     LOW = "low"
     HIGH = "high"
 
-
-STANDING_AT = {PriceLevel.LOW: 30, PriceLevel.HIGH: 100}
+    @property
+    def standing(self) -> int:
+        return {PriceLevel.LOW: 20, PriceLevel.HIGH: 90}[self]
 
 
 @dataclass(frozen=True)
@@ -35,7 +39,7 @@ class RunSpec:
     seed: int
 
 
-@dataclass
+@dataclass(frozen=True)
 class RunRecord:
     spec: RunSpec
     result: RunResult | None
@@ -54,13 +58,15 @@ class Simulation:
 
 
 def plan(models: list[str], prices: list[PriceLevel], seeds: list[int]) -> list[RunSpec]:
+    """Every combination of model, price level and seed, in a fixed order (task index -> RunSpec)."""
     return [RunSpec(f"r{i:02d}", m, p, s) for i, (m, p, s) in enumerate(product(models, prices, seeds))]
 
 
 def run_one(spec: RunSpec, twins: tuple[Twin, ...], make_model: Callable[[RunSpec], Model], **config) -> RunRecord:
+    """One run; extra keyword arguments go to WorldConfig (e.g. max_days, thresholds)."""
     start = time.perf_counter()
     try:
-        world = WorldConfig(twins, seed=spec.seed, standing_start=STANDING_AT[spec.price], **config)
+        world = WorldConfig(twins, seed=spec.seed, standing_start=spec.price.standing, **config)
         result = run_world(world, make_model(spec))  # a fresh model per run: twins carry memories
         return RunRecord(spec, result, time.perf_counter() - start)
     except Exception as e:  # one failed run must not sink the simulation

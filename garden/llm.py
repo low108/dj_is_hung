@@ -39,33 +39,55 @@ class CallStats:
         }
 
 
-class CountingModel(language_model.LanguageModel):
-    """Counts every underlying text sample (choice retries included) and the time spent."""
+class Pacer:
+    """Client-side rate limit shared by every model using the same key: parallel runs share one quota."""
 
-    def __init__(self, inner: language_model.LanguageModel, *, letter_choices: bool = True,
-                 requests_per_minute: int | None = None):
-        """letter_choices: answer choices with our own counted letter prompt instead of the inner model's
-        sample_choice (whose internal calls we couldn't count). Set False for offline test models.
-        requests_per_minute: client-side pacing for rate-limited keys (the free tier allows 5/min/model)."""
-        self._inner = inner
-        self._letter_choices = letter_choices
-        self._rpm = requests_per_minute
+    def __init__(self, requests_per_minute: int):
+        self.rpm = requests_per_minute
         self._sent: list[float] = []
-        self.stats = CallStats()
         self._lock = threading.Lock()
 
-    def _pace(self) -> None:
-        if not self._rpm:
-            return
+    def wait(self) -> None:
         while True:
             with self._lock:
                 now = time.monotonic()
                 self._sent = [t for t in self._sent if now - t < 60]
-                if len(self._sent) < self._rpm:
+                if len(self._sent) < self.rpm:
                     self._sent.append(now)
                     return
-                wait = 60 - (now - self._sent[0]) + 0.5
-            time.sleep(wait)
+                delay = 60 - (now - self._sent[0]) + 0.5
+            time.sleep(delay)
+
+
+_PACERS: dict[tuple[str, str], Pacer] = {}
+_PACERS_LOCK = threading.Lock()
+
+
+def shared_pacer(key: tuple[str, str], requests_per_minute: int | None) -> Pacer | None:
+    """One Pacer per (provider, model), however many runs and threads use it."""
+    if not requests_per_minute:
+        return None
+    with _PACERS_LOCK:
+        return _PACERS.setdefault(key, Pacer(requests_per_minute))
+
+
+class CountingModel(language_model.LanguageModel):
+    """Counts every underlying text sample (choice retries included) and the time spent."""
+
+    def __init__(self, inner: language_model.LanguageModel, *, letter_choices: bool = True,
+                 pacer: Pacer | None = None):
+        """letter_choices: answer choices with our own counted letter prompt instead of the inner model's
+        sample_choice (whose internal calls we couldn't count). Set False for offline test models.
+        pacer: a shared client-side rate limit (the Gemini free tier allows 5 requests/min/model)."""
+        self._inner = inner
+        self._letter_choices = letter_choices
+        self._pacer = pacer
+        self.stats = CallStats()
+        self._lock = threading.Lock()
+
+    def _pace(self) -> None:
+        if self._pacer:
+            self._pacer.wait()
 
     def sample_text(self, prompt: str, **kwargs) -> str:
         for attempt in range(6):
@@ -186,7 +208,7 @@ ILMU_MINI = "ilmu-mini-v3.3"
 
 def gemini(model_name: str = FLASH, requests_per_minute: int | None = None) -> CountingModel:
     rpm = requests_per_minute or int(os.environ.get("GEMINI_RPM", "0")) or None
-    return CountingModel(GenAIModel(model_name), requests_per_minute=rpm)
+    return CountingModel(GenAIModel(model_name), pacer=shared_pacer(("gemini", model_name), rpm))
 
 
 def make_model(spec: str | None = None) -> CountingModel:
@@ -199,7 +221,7 @@ def make_model(spec: str | None = None) -> CountingModel:
     if provider == "ilmu":
         rpm = int(os.environ.get("ILMU_RPM", "0")) or None
         inner = OpenAICompatModel(name or ILMU_MINI, ILMU_BASE_URL, os.environ["ILMU_API_KEY"])
-        return CountingModel(inner, requests_per_minute=rpm)
+        return CountingModel(inner, pacer=shared_pacer(("ilmu", name or ILMU_MINI), rpm))
     raise ValueError(f"unknown model provider {provider!r} in {spec!r}")
 
 

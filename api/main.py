@@ -21,7 +21,7 @@ class StartSimulation(BaseModel):
 
     scenario: Literal["breakout", "unrequited", "timeout", "excluded"] = "breakout"  # for fake models
     models: list[str] = demo.FAKE_MODELS
-    prices: list[PriceLevel] = [PriceLevel.LOW, PriceLevel.HIGH]
+    prices: list[PriceLevel] = list(PriceLevel)
     seeds: list[int] = [0, 1]
     max_days: int = 10
 

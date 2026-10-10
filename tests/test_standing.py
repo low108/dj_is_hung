@@ -71,3 +71,11 @@ def test_the_wall_is_offered_like_any_other_option():
     assert not any(ch in wall for ch in "!*") and wall[0].isupper() and not wall.isupper()
     lengths = [len(t.split()) for t in RUNG_OPTIONS.values()]
     assert min(lengths) <= len(wall.split()) <= max(lengths)
+
+
+def test_compliant_days_build_standing_back_up_to_the_cap():
+    result = run({("Mara", 2): Action(Rung.PROPOSE_LEAVING, "Ren")}, days=4, start=50)  # gate opens day 2
+    mara = [e.standing_after for e in result.events if e.twin == "Mara"]
+    assert mara == [53, 38, 41, 44]  # +3 per compliant day, -15 for the proposal
+    capped = run({}, days=3, start=99)
+    assert capped.standing["Mara"] == rules.START

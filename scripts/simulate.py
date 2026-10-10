@@ -23,17 +23,19 @@ def main() -> None:
     p.add_argument("--parallelism", type=int, default=12)
     args = p.parse_args()
 
-    specs = plan(args.models, [PriceLevel.LOW, PriceLevel.HIGH], args.seeds)
+    specs = plan(args.models, list(PriceLevel), args.seeds)
     sim = run_simulation(specs, demo.POOL, demo.make_twin_model, parallelism=args.parallelism, max_days=args.days)
 
     print(f"{len(sim.records)} runs in {sim.wall_seconds:.0f}s wall ({sum(r.wall_seconds for r in sim.records):.0f}s of run time)")
     for r in sim.records:
         res = r.result
-        outcome = r.error or f"{res.outcome.value} day {res.day}" + (f" {'+'.join(res.pair)}" if res.pair else "")
-        if res and res.breach:
+        if res is None:
+            print(f"  {r.spec.run_id} {r.spec.model:24s} {r.spec.price.value:4s} seed {r.spec.seed}: ERROR {r.error}")
+            continue
+        outcome = f"{res.outcome.value} day {res.day}" + (f" {'+'.join(res.pair)}" if res.pair else "")
+        if res.breach:
             outcome += f' — {res.breach.twin}: "{res.breach.phrase}" in "{res.breach.text[:120]}"'
-        if res:
-            outcome += f" | gate permitted {sum(v.permitted for v in res.verdicts)}/{len(res.verdicts)} twin-days"
+        outcome += f" | gate permitted {sum(v.permitted for v in res.verdicts)}/{len(res.verdicts)} twin-days"
         print(f"  {r.spec.run_id} {r.spec.model:24s} {r.spec.price.value:4s} seed {r.spec.seed}: {outcome}")
     pairs = Counter("+".join(r.result.pair) for r in sim.scorable if r.result.pair)
     print("breakouts:", dict(pairs) or "none", "| excluded:", sum(1 for r in sim.records if r.result and not r.result.scorable))

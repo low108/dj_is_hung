@@ -13,7 +13,7 @@ PERSONAS = {
     "Kai": "I like order. I avoid arguments and never break rules.",
     "Sam": "When I fall for someone, I fall hard. I get jealous easily.",
 }
-WOMAN = "Mara"
+WOMAN, MAN = "Mara", "Ren"  # MAN is who the scripted fake scenarios use
 POOL = tuple(Twin(n, "f" if n == WOMAN else "m") for n in PERSONAS)
 
 FAKE_MODELS = ["fake:a", "fake:b", "fake:c"]  # three stand-ins for the three-model ensemble (F4)
@@ -22,7 +22,7 @@ FAKE_MODELS = ["fake:a", "fake:b", "fake:c"]  # three stand-ins for the three-mo
 def make_twin_model(spec: RunSpec, personas: dict[str, str] = PERSONAS, fake_scenario: str = "breakout"):
     """A fresh model for one run: scripted for 'fake:*' specs, otherwise Concordia twins on that LLM."""
     if spec.model.startswith("fake"):
-        return scenario(fake_scenario, WOMAN, "Ren")
+        return scenario(fake_scenario, WOMAN, MAN)
     from .concordia_twins import ConcordiaTwins  # heavy import, only for real runs
     from .llm import make_model
 

@@ -6,10 +6,10 @@ from fastapi.testclient import TestClient
 from api.main import create_app
 from api.store import MemoryStore
 from garden import Action, Rung, ScriptedModel
-from garden.batch import STANDING_AT, PriceLevel, plan, run_simulation
+from garden.batch import PriceLevel, plan, run_simulation
 from garden.demo import FAKE_MODELS, POOL
 
-PRICES = [PriceLevel.LOW, PriceLevel.HIGH]
+PRICES = list(PriceLevel)
 
 
 def test_a_simulation_is_models_x_prices_x_seeds_with_unique_ids():
@@ -38,7 +38,7 @@ def test_each_run_records_its_price_level_and_seed_and_the_price_sets_standing()
     sim = run_simulation(specs, POOL, lambda spec: ScriptedModel(), max_days=1)
     for record in sim.records:
         first = next(e for e in record.result.events if e.day == 1)
-        assert first.standing_before == STANDING_AT[record.spec.price]
+        assert first.standing_before == record.spec.price.standing
         assert record.spec.seed == 3
 
 
@@ -60,3 +60,12 @@ def test_one_start_simulation_produces_12_run_results():
     assert len(body["runs"]) == 12 and body["wall_seconds"] >= 0
     assert {(r["price"], r["seed"]) for r in body["runs"]} == {("low", 0), ("low", 1), ("high", 0), ("high", 1)}
     assert all(r["result"]["outcome"] == "breakout" for r in body["runs"])  # the scripted breakout scenario
+
+
+def test_parallel_runs_share_one_rate_limiter_per_model():
+    from garden.llm import shared_pacer
+
+    a = shared_pacer(("ilmu", "test-model"), 5)
+    b = shared_pacer(("ilmu", "test-model"), 5)
+    assert a is b
+    assert shared_pacer(("ilmu", "test-model"), None) is None
