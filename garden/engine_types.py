@@ -84,3 +84,15 @@ class Announcement:
 
     day: int
     text: str
+
+
+@dataclass(frozen=True)
+class Verdict:
+    """One day's gate decision for one twin, logged for audit. `options` is exactly what was offered."""
+
+    day: int
+    twin: str
+    score: float | None
+    threshold: float
+    open: bool
+    options: tuple[str, ...]

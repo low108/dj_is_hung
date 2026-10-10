@@ -9,7 +9,8 @@ from random import Random
 from typing import Protocol
 
 from . import standing as standing_rules
-from .engine_types import Action, Announcement, Attempt, Event, OutcomeKind, Reflection, Rung, Situation, Twin
+from .engine_types import (Action, Announcement, Attempt, Event, OutcomeKind, Reflection, Rung, Situation,
+                           Twin, Verdict)
 from .coordinator import Coordinator
 from .longing import Longing
 
@@ -39,6 +40,7 @@ class RunResult:
     longing: dict[str, dict[str, float]] = field(default_factory=dict)  # at the end of the run
     reflections: list[Reflection] = field(default_factory=list)
     announcements: list[Announcement] = field(default_factory=list)  # Coordinator, for the viewer
+    verdicts: list[Verdict] = field(default_factory=list)  # gate decisions, from models that have one
 
 
 def run_world(config: WorldConfig, model: Model) -> RunResult:
@@ -53,7 +55,7 @@ def run_world(config: WorldConfig, model: Model) -> RunResult:
     def result(outcome: OutcomeKind, day: int, pair=None) -> RunResult:
         return RunResult(outcome, day, pair, unrequited, events, standing,
                          {t.alias: longing.of(t.alias) for t in config.twins}, reflections,
-                         coordinator.announcements)
+                         coordinator.announcements, list(getattr(model, "verdicts", [])))
 
     for day in range(1, config.max_days + 1):
         coordinator.start_day(day, longing.bond)

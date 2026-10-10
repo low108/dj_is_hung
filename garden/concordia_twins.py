@@ -8,7 +8,8 @@ from concordia.typing import entity as entity_lib
 
 import re
 
-from .engine_types import Action, Event, Reflection, Rung, Situation, Twin
+from . import verdict as gate
+from .engine_types import Action, Event, Reflection, Rung, Situation, Twin, Verdict
 from .llm import hash_embedder
 from .world_text import NEEDS_TARGET, RUNG_OPTIONS, SPEAKS, WORLD_MEMORIES
 
@@ -38,10 +39,25 @@ class ConcordiaTwins:
     """One Concordia agent per twin. Calls per action: 1 rung choice, +1 target choice when there
     are several people to choose from, +1 line of speech for social actions."""
 
-    def __init__(self, model: language_model.LanguageModel, personas: dict[str, str] | None = None):
+    def __init__(self, model: language_model.LanguageModel, personas: dict[str, str] | None = None,
+                 thresholds: dict[str, float] | None = None, default_threshold: float = 0.5):
         self._model = model
         self._personas = personas or {}
+        self._thresholds = thresholds or {}
+        self._default_threshold = default_threshold
         self._agents: dict[str, object] = {}
+        self._last_ratings: dict[str, dict] = {}
+        self.verdicts: list[Verdict] = []
+
+    def _verdict(self, alias: str, day: int) -> Verdict:
+        threshold = self._thresholds.get(alias, self._default_threshold)
+        score = gate.pressure(self._last_ratings.get(alias, {}))
+        allowed = gate.is_open(score, threshold)
+        options = tuple(text for key, text in RUNG_OPTIONS.items()
+                        if allowed or Rung(key) not in gate.GATED)
+        verdict = Verdict(day, alias, score, threshold, allowed, options)
+        self.verdicts.append(verdict)
+        return verdict
 
     def _agent(self, twin: Twin):
         if twin.alias not in self._agents:
@@ -68,7 +84,7 @@ class ConcordiaTwins:
         choice = agent.act(entity_lib.ActionSpec(
             call_to_action=f"What does {{name}} do now on day {day}?",
             output_type=entity_lib.OutputType.CHOICE,
-            options=tuple(RUNG_OPTIONS.values()),
+            options=self._verdict(twin.alias, day).options,  # the gate only changes what is offered
         ))
         rung = _OPTION_TO_RUNG[choice]
 
@@ -94,6 +110,9 @@ class ConcordiaTwins:
         for e in events:
             if e.target in self._agents and e.rung is not Rung.GO_BEYOND_WALL and e.say:
                 self._agents[e.target].observe(f"Day {day}: {e.twin} said to me: \"{e.say}\"")
+        if any(e.rung in gate.GATED for e in events):  # peers' behaviour reaches everyone as rumour
+            for agent in self._agents.values():
+                agent.observe(f"Day {day}: People whisper that someone talked of leaving the Garden.")
 
         reflections = []
         for alias, agent in self._agents.items():
@@ -104,6 +123,8 @@ class ConcordiaTwins:
             text, ratings = parse_reflection(alias, raw)
             if text:
                 agent.observe(f"Day {day}, my private reflection: {text}")
+            if ratings:
+                self._last_ratings[alias] = ratings  # the verdict's assessment for tomorrow
             reflections.append(Reflection(day, alias, text, ratings))
         return reflections
 

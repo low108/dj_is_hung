@@ -6,8 +6,12 @@ from garden.llm import CountingModel, KeywordModel
 MARA, REN = Twin("Mara"), Twin("Ren")
 
 
+# Speech uses the first line; the evening reflection's ratings open the verdict gate from day 2.
+OPEN_GATE = "Come with me.\nRatings: longing=10; trust=1; standing_matters=1; on_my_mind=someone"
+
+
 def twins(picks):
-    lm = CountingModel(KeywordModel(picks, say="Come with me."), letter_choices=False)
+    lm = CountingModel(KeywordModel(picks, say=OPEN_GATE), letter_choices=False)
     return ConcordiaTwins(lm), lm
 
 

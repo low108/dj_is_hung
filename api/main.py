@@ -32,6 +32,8 @@ def serialize(result) -> dict:
         "standing": result.standing,
         "longing": {who: {n: round(v, 2) for n, v in d.items()} for who, d in result.longing.items()},
         "announcements": [{"day": a.day, "text": a.text} for a in result.announcements],
+        "verdicts": [{"day": v.day, "twin": v.twin, "score": v.score, "threshold": v.threshold,
+                      "open": v.open, "options": list(v.options)} for v in result.verdicts],
         "reflections": [{"day": r.day, "twin": r.twin, "text": r.text, "ratings": r.ratings}
                         for r in result.reflections],
         "events": [
