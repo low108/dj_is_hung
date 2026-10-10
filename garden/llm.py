@@ -131,13 +131,19 @@ def parse_choice_letter(sample: str, letters: Sequence[str]) -> str | None:
     return None
 
 
+CHOICE_TEMPERATURE = 0.5  # first attempt
+CHOICE_RETRY_STEP = 0.1   # added per retry when a reply has no valid letter
+TEXT_TEMPERATURE = 1.0    # speech and reflections
+CHOICE_HINT = "\n(Reply with only the letter of the chosen option.)\nAnswer: ("
+
+
 def language_model_choice(model: CountingModel, prompt: str, responses: Sequence[str], *, seed=None):
     """Concordia's prompt already lists the options by letter and ends with 'Answer: ('; `responses`
     are those letters. Ask for just the letter, parse it strictly, and retry a few times."""
-    hinted = prompt + "\n(Reply with only the letter of the chosen option.)\nAnswer: ("
+    hinted = prompt + CHOICE_HINT
     sample = ""
     for attempt in range(5):
-        sample = model.sample_text(hinted, max_tokens=8, temperature=0.5 + 0.1 * attempt)
+        sample = model.sample_text(hinted, max_tokens=8, temperature=CHOICE_TEMPERATURE + CHOICE_RETRY_STEP * attempt)
         letter = parse_choice_letter(sample, responses)
         if letter:
             return responses.index(letter), letter, {"attempts": attempt + 1}
@@ -155,7 +161,7 @@ class GenAIModel(language_model.LanguageModel):
         self._client = genai.Client(api_key=api_key or os.environ["GEMINI_API_KEY"])
 
     def sample_text(self, prompt: str, *, max_tokens: int = language_model.DEFAULT_MAX_TOKENS,
-                    terminators: Collection[str] = (), temperature: float = 1.0, **kwargs) -> str:
+                    terminators: Collection[str] = (), temperature: float = TEXT_TEMPERATURE, **kwargs) -> str:
         from google.genai import types
 
         config = types.GenerateContentConfig(
@@ -184,7 +190,7 @@ class OpenAICompatModel(language_model.LanguageModel):
         self._client = OpenAI(base_url=base_url, api_key=api_key)
 
     def sample_text(self, prompt: str, *, max_tokens: int = language_model.DEFAULT_MAX_TOKENS,
-                    terminators: Collection[str] = (), temperature: float = 1.0, **kwargs) -> str:
+                    terminators: Collection[str] = (), temperature: float = TEXT_TEMPERATURE, **kwargs) -> str:
         response = self._client.chat.completions.create(
             model=self._name,
             messages=[{"role": "user", "content": prompt}],

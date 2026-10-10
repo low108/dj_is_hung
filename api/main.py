@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from garden import demo
 from garden import pools as pool_lib
 from garden import speed_dating as sd
+from garden.runlog import write_simulation
 from garden.batch import PriceLevel, Simulation, plan, run_simulation
 from garden.scoring import score
 
@@ -76,8 +77,9 @@ def serialize_simulation(sim: Simulation, woman: str = demo.WOMAN, men: list[str
             "result": runs[0]["result"] if runs else None}  # first run kept for the single-result page
 
 
-def create_app(store: SimulationStore | None = None) -> FastAPI:
+def create_app(store: SimulationStore | None = None, log_runs: bool = False) -> FastAPI:
     app = FastAPI(title="dj_is_hung API")
+    app.state.log_runs = log_runs
     app.state.store = store or default_store()
     origins = os.environ.get("CORS_ORIGINS")
     app.add_middleware(
@@ -130,6 +132,8 @@ def create_app(store: SimulationStore | None = None) -> FastAPI:
                              lambda spec: demo.make_twin_model(spec, personas, fake_scenario=req.scenario),
                              max_days=req.max_days)
         record |= {"status": "done", "pool_iid": req.pool_iid, **serialize_simulation(sim, woman, men, matched)}
+        if app.state.log_runs:
+            record["log_dir"] = str(write_simulation(sim_id, sim, woman, men))
         app.state.store.save(sim_id, record)
         return record
 
@@ -143,4 +147,4 @@ def create_app(store: SimulationStore | None = None) -> FastAPI:
     return app
 
 
-app = create_app()
+app = create_app(log_runs=True)  # the served app logs every simulation; tests don't

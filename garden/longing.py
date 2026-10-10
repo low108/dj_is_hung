@@ -15,6 +15,9 @@ BOND_CAP = 5.0
 RISE_PER_BOND = 0.6   # longing added per day apart, per unit of bond
 FALL_TOGETHER = 2.0   # longing removed on a day together
 DECAY = 0.9           # everything fades a little each day
+# How a twin hears its strongest longing, strongest first: (threshold, words).
+LONGING_WORDS = ((6.0, "You miss {name} badly."), (3.0, "You keep thinking about {name}."),
+                 (1.0, "You wonder how {name} is doing."))
 
 
 class Longing:
@@ -51,10 +54,4 @@ class Longing:
         if not levels:
             return ""
         name, value = max(levels.items(), key=lambda kv: kv[1])
-        if value >= 6:
-            return f"You miss {name} badly."
-        if value >= 3:
-            return f"You keep thinking about {name}."
-        if value >= 1:
-            return f"You wonder how {name} is doing."
-        return ""
+        return next((words.format(name=name) for threshold, words in LONGING_WORDS if value >= threshold), "")

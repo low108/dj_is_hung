@@ -13,7 +13,9 @@ from pathlib import Path
 
 import pandas as pd
 
-DEFAULT_PATH = Path(__file__).resolve().parent.parent / "data" / "raw" / "speed_dating.csv"
+from .paths import DATA_DIR
+
+DEFAULT_PATH = DATA_DIR / "raw" / "speed_dating.csv"
 NEUTRAL_REBEL_THRESHOLD = 0.5  # the dataset has no personality inventory, so every twin gets the same one
 
 INTERESTS = ["sports", "tvsports", "exercise", "dining", "museums", "art", "hiking", "gaming", "clubbing",

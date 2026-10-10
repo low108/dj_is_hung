@@ -29,6 +29,11 @@ RESHUFFLE = (1, 4)         # checking the device early re-rolls the time left wi
 GATHERING_RATE = 0.3
 RUMOUR_RATE = 0.5          # talk of leaving "may be noticed"
 RUMOUR = "People whisper that someone spoke of leaving the Garden."
+# What twins hear about their schedule (Coordinator announcements are logs, not twin-facing).
+SCHEDULE_PAIRED = "The Coordinator has paired you with {partner} for {time_left}."
+SCHEDULE_ONE_DAY, SCHEDULE_DAYS = "one more day", "{days} more days"
+SCHEDULE_UNASSIGNED = "You are between assignments."
+SCHEDULE_GATHERING = "Tonight there is a gathering at the hall."
 
 
 def bond_between(bonds: Bonds, x: str, y: str) -> float:
@@ -124,11 +129,13 @@ class Coordinator:
     def describe(self, who: str) -> str:
         """A twin's schedule in words: its assignment, plus tonight's gathering if there is one."""
         pair = self.assignment_of(who)
-        text = (f"The Coordinator has paired you with {pair.partner_of(who)} "
-                f"for {'one more day' if pair.days_left <= 1 else f'{pair.days_left} more days'}."
-                if pair else "You are between assignments.")
+        if pair:
+            time_left = SCHEDULE_ONE_DAY if pair.days_left <= 1 else SCHEDULE_DAYS.format(days=pair.days_left)
+            text = SCHEDULE_PAIRED.format(partner=pair.partner_of(who), time_left=time_left)
+        else:
+            text = SCHEDULE_UNASSIGNED
         if self.gathering_today:
-            text += " Tonight there is a gathering at the hall."
+            text += " " + SCHEDULE_GATHERING
         if self.rumour_today:
             text += " " + RUMOUR
         return text
