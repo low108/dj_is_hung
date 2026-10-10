@@ -11,6 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from garden import demo
+from garden import pools as pool_lib
+from garden import speed_dating as sd
 from garden.batch import PriceLevel, Simulation, plan, run_simulation
 from garden.scoring import score
 
@@ -25,6 +27,7 @@ class StartSimulation(BaseModel):
     prices: list[PriceLevel] = list(PriceLevel)
     seeds: list[int] = [0, 1]
     max_days: int = 10
+    pool_iid: int | None = None  # a real speed-dating woman (see GET /pools); None = placeholder demo pool
 
 
 def serialize(result) -> dict:
@@ -51,16 +54,25 @@ def serialize(result) -> dict:
     }
 
 
-def serialize_simulation(sim: Simulation) -> dict:
+def serialize_simulation(sim: Simulation, woman: str = demo.WOMAN, men: list[str] | None = None,
+                         matched: frozenset[str] | None = None) -> dict:
+    men = demo.MEN if men is None else men
+    scores = score(list(sim.records), woman, men)
     runs = [{"run_id": r.spec.run_id, "model": r.spec.model, "price": r.spec.price.value, "seed": r.spec.seed,
              "wall_seconds": round(r.wall_seconds, 2), "error": r.error,
              "result": serialize(r.result) if r.result else None} for r in sim.records]
     ranking = [{"candidate": c.candidate, "price": c.price.value if c.price else None, "breakouts": c.breakouts,
                 "runs": c.runs, "ci_low": c.ci_low, "ci_high": c.ci_high,
                 "by_price": {p: list(v) for p, v in c.breakouts_by_price.items()}}
-               for c in score(list(sim.records), demo.WOMAN, demo.MEN)]
+               for c in scores]
+    answer_key = None
+    if matched is not None:
+        check = pool_lib.check_ranking(scores, matched)
+        answer_key = {"matched": sorted(matched), "matched_ranks": check.matched_ranks,
+                      "other_ranks": check.other_ranks, "matches_on_top": check.matches_on_top,
+                      "pairs_in_order": check.pairs_in_order}
     return {"wall_seconds": round(sim.wall_seconds, 2), "runs": runs, "ranking": ranking,
-            "scored_runs": len(sim.scorable),
+            "scored_runs": len(sim.scorable), "woman": woman, "answer_key": answer_key,
             "result": runs[0]["result"] if runs else None}  # first run kept for the single-result page
 
 
@@ -77,10 +89,34 @@ def create_app(store: SimulationStore | None = None) -> FastAPI:
         allow_headers=["*"],
     )
 
+    app.state.dates = None
+
+    def dates():
+        if app.state.dates is None:
+            try:
+                app.state.dates = sd.load()
+            except FileNotFoundError as e:
+                raise HTTPException(503, str(e)) from e
+        return app.state.dates
+
+    @app.get("/pools")
+    def list_pools() -> list[dict]:
+        """Real women eligible for a demo pool (at least 2 mutual matches and 3 non-matches)."""
+        return pool_lib.eligible_women(dates())
+
     @app.post("/simulations", status_code=201)
     def start_simulation(req: StartSimulation) -> dict:
         sim_id = uuid.uuid4().hex[:12]
         specs = plan(req.models, req.prices, req.seeds)
+        if req.pool_iid is not None:
+            try:
+                pool = pool_lib.load_pool(dates(), req.pool_iid)
+            except KeyError as e:
+                raise HTTPException(404, str(e)) from e
+            twins, personas, woman, men, matched = (pool.twins, pool.personas, pool.woman.alias,
+                                                    pool.men_aliases, pool.matched)
+        else:
+            twins, personas, woman, men, matched = demo.POOL, demo.PERSONAS, demo.WOMAN, demo.MEN, None
         record = {
             "id": sim_id,
             "status": "running",
@@ -90,9 +126,10 @@ def create_app(store: SimulationStore | None = None) -> FastAPI:
         }
         app.state.store.save(sim_id, record)
         # Runs fan out on local threads for now; A3 moves the same RunSpecs to Cloud Run Job tasks.
-        sim = run_simulation(specs, demo.POOL, lambda spec: demo.make_twin_model(spec, fake_scenario=req.scenario),
+        sim = run_simulation(specs, twins,
+                             lambda spec: demo.make_twin_model(spec, personas, fake_scenario=req.scenario),
                              max_days=req.max_days)
-        record |= {"status": "done", **serialize_simulation(sim)}
+        record |= {"status": "done", "pool_iid": req.pool_iid, **serialize_simulation(sim, woman, men, matched)}
         app.state.store.save(sim_id, record)
         return record
 

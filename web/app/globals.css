@@ -52,6 +52,7 @@ body {
 }
 
 select,
+input,
 button {
   font: inherit;
   padding: 8px 12px;
@@ -109,4 +110,18 @@ button:disabled {
 .ranking th {
   color: var(--muted);
   font-weight: 600;
+}
+
+input[type="number"] {
+  width: 9rem;
+}
+
+.verdict {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.verdict.good {
+  border-left: 3px solid var(--accent);
 }
