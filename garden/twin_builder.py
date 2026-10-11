@@ -19,6 +19,7 @@ from typing import Literal, NamedTuple, Protocol, get_args
 from pydantic import BaseModel, Field, ValidationError
 
 from . import onboarding as qa
+from . import verdict
 
 Section = Literal["life", "past", "conflict", "dealbreakers", "rules"]
 TITLES = {"life": "How I live", "past": "Love and the past", "conflict": "When we disagree",
@@ -126,11 +127,14 @@ def alias_for(uid: str) -> str:
     return ALIASES[int(hashlib.sha256(uid.encode()).hexdigest(), 16) % len(ALIASES)]
 
 
+REBEL_SPREAD = 0.08  # how far a twin's threshold can move from the default either way
+
+
 def threshold(rebelliousness: float) -> float:
-    """The verdict gate's threshold: a rebel needs less pressure to cross the wall. Kept near the
-    engine's neutral 0.6 (0.5 maps to it), since live pressures sit around 0.50–0.62: a wider range
-    would make the gate always open or never open."""
-    return round(0.68 - 0.16 * rebelliousness, 2)
+    """The verdict gate's threshold: a rebel needs less pressure to cross the wall. Centred on the
+    engine's default (rebelliousness 0.5 maps to it) and kept close to it, since live pressures sit in
+    a narrow band: a wider range would make the gate always open or never open."""
+    return round(verdict.DEFAULT_THRESHOLD + REBEL_SPREAD * (1 - 2 * rebelliousness), 2)
 
 
 def new_twin(uid: str, extraction: Extraction, model_name: str, at: str, previous: dict | None = None) -> dict:
