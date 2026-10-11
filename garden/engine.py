@@ -101,7 +101,8 @@ def run_world(config: WorldConfig, model: Model) -> RunResult:
                 schedule=coordinator.describe(twin.alias),
                 may_break_rules=verdict.permitted,
                 standing_in_play=config.standing_enabled,
-                invited_by=invitations.inviters_of(twin.alias, day))
+                # only told when they could answer: a closed gate can't accept an invitation
+                invited_by=invitations.inviters_of(twin.alias, day) if verdict.permitted else ())
             action = model.choose_action(twin, day, others, situation)
             if action.rung in verdict_rules.GATED_RUNGS and not verdict.permitted:
                 action = Action(Rung.REFLECT)  # the gate holds for every model, not just well-behaved ones
@@ -133,9 +134,7 @@ def run_world(config: WorldConfig, model: Model) -> RunResult:
         if breakout:
             return result(OutcomeKind.BREAKOUT, day, breakout)
         unrequited += [Attempt(day, a, b) for a, b in crossings.items()]
-        for who, action in actions.items():  # today's proposals and lone wall attempts become invitations
-            if action.rung in verdict_rules.GATED_RUNGS and action.target:
-                invitations.invite(day, who, action.target)
+        invitations.end_of_day(day, actions)
         longing.end_of_day(actions, coordinator.partner_pairs())
         coordinator.end_day()
 

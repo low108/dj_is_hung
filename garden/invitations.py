@@ -9,6 +9,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .engine_types import Action
+from .verdict import GATED_RUNGS
+
 WINDOW = 2  # days an invitation stays open after the day it was made
 
 
@@ -16,11 +19,21 @@ WINDOW = 2  # days an invitation stays open after the day it was made
 class Invitations:
     _open: dict[tuple[str, str], int] = field(default_factory=dict)  # (inviter, invitee) -> last open day
 
-    def invite(self, day: int, inviter: str, invitee: str) -> None:
+    def invite(self, inviter: str, invitee: str, day: int) -> None:
+        """The inviter's latest choice wins: inviting someone withdraws their earlier invitations."""
+        for key in [k for k in self._open if k[0] == inviter and k[1] != invitee]:
+            del self._open[key]
         self._open[(inviter, invitee)] = day + WINDOW
 
     def is_open(self, inviter: str, invitee: str, day: int) -> bool:
-        return self._open.get((inviter, invitee), 0) >= day
+        last = self._open.get((inviter, invitee))
+        return last is not None and last >= day
+
+    def end_of_day(self, day: int, actions: dict[str, Action]) -> None:
+        """Today's proposals to leave and lone wall attempts become invitations."""
+        for who, action in actions.items():
+            if action.rung in GATED_RUNGS and action.target:
+                self.invite(who, action.target, day)
 
     def inviters_of(self, invitee: str, day: int) -> tuple[str, ...]:
         return tuple(sorted(a for (a, b), last in self._open.items() if b == invitee and last >= day))

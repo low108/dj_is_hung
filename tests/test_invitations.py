@@ -49,3 +49,18 @@ def test_the_invited_twin_hears_about_it_while_it_is_open():
         assert model.seen[("Mara", day)].invited_by == ("Ren",)
     assert model.seen[("Mara", 3 + WINDOW)].invited_by == ()  # expired
     assert model.seen[("Jun", 3)].invited_by == ()            # only the invited twin hears it
+
+
+def test_the_inviters_latest_choice_wins():
+    # Ren asks Mara to leave, then changes his mind and asks Theo instead.
+    result, _ = run({("Ren", 2): Action(LEAVE, "Mara"), ("Ren", 3): Action(LEAVE, "Theo"),
+                     ("Mara", 4): Action(WALL, "Ren")})
+    assert result.outcome is OutcomeKind.TIMEOUT  # his invitation to Mara was withdrawn on day 3
+
+
+def test_a_twin_who_cannot_answer_is_not_told():
+    # Ren's gate opens as usual; Mara's threshold is out of reach, so she can never answer.
+    model = Recording({("Ren", 2): Action(LEAVE, "Mara")})
+    result = run_world(WorldConfig(WORLD, max_days=4, seed=2, thresholds=(("Mara", 1.1),)), model)
+    assert any(e.twin == "Ren" and e.rung is LEAVE for e in result.events)  # the invitation was made
+    assert all(model.seen[("Mara", d)].invited_by == () for d in range(1, 5))
