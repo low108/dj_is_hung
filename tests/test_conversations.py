@@ -1,5 +1,7 @@
 """#62: a date is a conversation: each twin answers the line just said to it, talks about itself, and the
 date goes on until both end it (or the turn cap)."""
+import pytest
+
 from garden import Action, Rung, ScriptedModel, Twin, WorldConfig, run_world
 from garden.concordia_twins import ConcordiaTwins, _clean_speech, ask_action, ask_speech, offered_options
 from garden.engine import MAX_TURNS
@@ -250,3 +252,37 @@ def test_a_twin_sees_both_sides_of_the_conversation():
     run_world(WorldConfig((MARA, REN), max_days=1, seed=1), ConcordiaTwins(CountingModel(lm, letter_choices=False)))
     third = lm.prompts[2]  # by the third line each twin has spoken once
     assert 'said to me: "' in third and 'I said to' in third
+
+
+def test_a_long_line_ends_at_a_whole_sentence():
+    long = ("I came here to meet people outside the life I knew. " * 3 + "And one more sentence that would not fit "
+            "anyway because it rambles on and on about the river, the light, the hall and everything else besides.")
+    line = _clean_speech("Lina", long)
+    assert line.endswith(".") and len(line) <= 400 and "rambles" not in line
+    one_huge = "word " * 120
+    cut = _clean_speech("Lina", one_huge.strip() + ".")
+    assert cut.endswith("…") and len(cut) <= 401 and not cut.endswith(" …")
+
+
+def test_a_bracketed_stage_direction_of_any_length_is_dropped():
+    raw = "[Ren B. leans in, voice barely above a whisper]   The silence back home felt different."
+    assert _clean_speech("Ren B.", raw) == "The silence back home felt different."
+
+
+@pytest.mark.parametrize("text", [
+    'What does Ravi say to Lina?" but then provides "Observation: Answer what Lina just said',
+    "= [lists feelings and facts without repeating Felix, ending with a question]",
+    "It makes me wonder what I'm missing. Wait, let me refine that.",
+    'Lina" , in Tomas\'s own words, one or two sentences, adding something new',
+])
+def test_the_model_talking_about_its_prompt_is_a_slip(text):
+    from garden.immersion import breaking_phrase
+
+    assert breaking_phrase(text)
+
+
+def test_a_twin_claiming_another_twins_name_is_asked_again():
+    twins = ConcordiaTwins(CountingModel(KeywordModel({}), letter_choices=False))
+    twins.meet((MARA, REN))
+    assert twins._claims_another_name("Ren", "Mara—I'm Mara, studying Law.")
+    assert not twins._claims_another_name("Ren", "I'm Ren, and you're Mara.")

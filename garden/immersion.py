@@ -21,6 +21,11 @@ _PHRASES = re.compile(
     r"|(?:i'?m|i am) (?:being )?asked to (?:play|act|pretend|portray|write as)"
     r"|i (?:cannot|can'?t|won'?t) (?:fulfill|complete|continue|comply|do) (?:this|that|the|your)"
     r"|fictional (?:character|scenario|setting)"
+    # The model talking about the prompt instead of speaking: 'What does Ravi say to Lina?" but then
+    # provides "Observation: ...', '[lists feelings ... ending with a question]', 'Wait, let me ref...'
+    r"|what does \w+(?: [A-Z]\.)? say to|observation:|one or two sentences(?: of dialogue)?"
+    r"|in \w+(?: [A-Z]\.)?'s own words|without repeating \w+|ending with a question"
+    r"|(?:wait|actually|hmm),? let me (?:ref\w*|rephrase|rewrite|redo|revise|try again)"
     r")\b",
     re.IGNORECASE,
 )

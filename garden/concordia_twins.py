@@ -118,7 +118,7 @@ def echoes(line: str, earlier: list[str]) -> bool:
     words = line.lower()
     return any(SequenceMatcher(None, words, e.lower()).ratio() >= ECHO_RATIO for e in earlier if e)
 # Stage directions and speaker labels: '*She pauses.*', '**Lina:**', '(after a long pause)'.
-_STAGE = (re.compile(r"\*\*[^*\n]{1,40}:\*\*"), re.compile(r"\*+[^*\n]*\*+"), re.compile(r"_\*+|\*+_"),
+_STAGE = (re.compile(r"\[[^\]\n]{0,200}\]"), re.compile(r"\*\*[^*\n]{1,40}:\*\*"), re.compile(r"\*+[^*\n]*\*+"), re.compile(r"_\*+|\*+_"),
           re.compile(r"\([^)\n]*\)"), re.compile(r"\s*\([^)\n]*$"))
 
 
@@ -255,7 +255,8 @@ class ConcordiaTwins:
             return raw
         line = _clean_speech(alias, raw)
         for _ in range(RESAMPLES):
-            problem = "empty" if not line else "echo" if echoes(line, self._recent.get(alias, [])) else ""
+            problem = ("empty" if not line else "echo" if echoes(line, self._recent.get(alias, []))
+                       else "identity" if self._claims_another_name(alias, line) else "")
             if not problem:
                 break
             self.redos.append(Breach(day, alias, problem, line))
@@ -263,6 +264,11 @@ class ConcordiaTwins:
             if not immersion.breaking_phrase(retry):
                 line = _clean_speech(alias, retry)
         return line
+
+    def _claims_another_name(self, alias: str, line: str) -> bool:
+        """'I'm Lina', said by Amir: a twin speaking as someone else (seen once in live runs)."""
+        others = [re.escape(n) for n in self._agents if n != alias]
+        return bool(others) and bool(re.search(rf"\bI(?:'m| am) (?:{'|'.join(others)})\b", line))
 
     def _resample_while_breaking(self, alias: str, day: int, sample: Callable[[], T],
                                  text_of: Callable[[T], str]) -> T:
@@ -331,5 +337,12 @@ def _tidy(text: str, max_sentences: int = 3, max_chars: int = 600) -> str:
     """Plain prose only (no markdown headings, rules or emphasis), capped so memories stay short."""
     lines = [ln for ln in text.splitlines() if ln.strip() and not ln.strip().startswith(("#", "---"))]
     text = re.sub(r"[*_]+", "", " ".join(ln.strip() for ln in lines))
-    sentences = re.split(r"(?<=[.!?])\s+", text)
-    return " ".join(sentences[:max_sentences])[:max_chars].strip()
+    sentences = [s for s in re.split(r"(?<=[.!?])\s+", text.strip()) if s]
+    out = ""
+    for sentence in sentences[:max_sentences]:  # whole sentences only: 39% of live lines were cut mid-word
+        if out and len(out) + 1 + len(sentence) > max_chars:
+            break
+        out = f"{out} {sentence}".strip()
+    if len(out) > max_chars:  # one sentence longer than the cap: end at a word, and say so
+        out = out[:max_chars].rsplit(" ", 1)[0].rstrip(",;:—-") + "…"
+    return out
