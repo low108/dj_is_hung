@@ -169,6 +169,15 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
             return tuple(o.alias for o in config.twins if o != twin and compatible(twin, o))
         return ()
 
+    def leave_targets_for(twin: Twin, targets: tuple[str, ...]) -> tuple[str, ...]:
+        """Who a twin may ask to leave, or go to the wall with: anyone it has had a date with, wherever
+        they are today, plus whoever it is with. (Only its date could be chosen before, so in live runs
+        she left with whoever was in front of her while missing someone else.) The invitation waits for
+        the other's answer."""
+        met = [o.alias for o in config.twins if o != twin and compatible(twin, o)
+               and coordinator.dates[frozenset((twin.alias, o.alias))] > 0]
+        return tuple(dict.fromkeys((*targets, *met)))
+
     def play_day(day: int) -> tuple[tuple[str, str] | None, dict[str, str], list[tuple[str, Action]]]:
         """Today's turns. Only twins on a date or at the gathering act. A twin keeps acting until it does
         something on its own (which ends its day) or uses its MAX_TURNS; the twin just spoken to answers
@@ -199,6 +208,7 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
             # the partner has already gone for the day).
             must_talk = bool(partner) and partner not in done and not {twin.alias, partner} <= spoken
             replying_to = unanswered.pop(twin.alias, None)  # one chance to answer: its next turn
+            leave_targets = leave_targets_for(twin, targets)
             situation = Situation(
                 standing=standing_rules.describe(standing[twin.alias]) if config.standing_enabled else "",
                 longing=longing.describe(twin.alias) if config.longing_enabled else "",
@@ -206,14 +216,17 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
                 wall_open=wall_open,
                 standing_in_play=config.standing_enabled,
                 invited_by=invitations.inviters_of(twin.alias, day) if wall_open else (),
-                phase=phase.value, targets=targets, must_talk=must_talk, replying_to=replying_to)
+                phase=phase.value, targets=targets, must_talk=must_talk, replying_to=replying_to,
+                leave_targets=leave_targets)
             action = model.choose_action(twin, day, tuple(by_alias[a] for a in targets), situation)
             if action.rung in LEAVING_RUNGS and not wall_open:
                 action = Action(Rung.REFLECT)  # the lock holds for every model, not just well-behaved ones
-            elif action.rung in SOCIAL_RUNGS and (action.target not in targets or (
-                    action.rung is not Rung.GO_BEYOND_WALL and action.target in done)):
-                # Out of reach (or gone for the day, unless it's the wall, a private choice that doesn't
-                # need them there): it keeps to itself instead.
+            elif action.rung in LEAVING_RUNGS and action.target not in leave_targets:
+                action = Action(Rung.REFLECT)  # someone it has never had a date with
+            elif action.rung in SOCIAL_RUNGS and action.rung not in LEAVING_RUNGS and (
+                    action.target not in targets or action.target in done):
+                # Out of reach, or gone for the day: it keeps to itself instead. (Leaving is an invitation
+                # that waits for the other's answer, so it doesn't need them there.)
                 action = Action(Rung.REFLECT)
             elif action.rung is Rung.SEEK_OUT and phase is Phase.DATE:
                 action = Action(Rung.TALK, action.target, action.say)  # on a date they're already together
@@ -290,7 +303,9 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
                 todays[i] = replace(r, text="")
         emit_states(day, {r.twin: r.text for r in todays})
         reflections.extend(todays)
-        if coordinator.rounds_complete():  # every man has had his dates: nobody broke out
+        if coordinator.rounds_complete():  # every man has had his dates: nobody broke out, Pairing Day
+            coordinator.pairing_day(day)
+            stream()
             return result(OutcomeKind.TIMEOUT, day)
 
     return result(OutcomeKind.TIMEOUT, config.max_days)  # the safety cap

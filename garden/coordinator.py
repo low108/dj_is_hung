@@ -131,6 +131,10 @@ class Coordinator:
         running_first = any(self.dates[frozenset((p.first, p.second))] <= 1 for p in self.assignments)
         return bool(pairs) and not running_first and all(self.dates[p] >= 1 for p in pairs)
 
+    def pairing_day(self, day: int) -> None:
+        self._announce(day, "pairing_day", "Pairing Day: everyone stayed, and the Coordinator pairs each of "
+                       "them with their partner for life.")
+
     def open_wall(self, day: int) -> None:
         self._announce(day, "wall_open", "Everyone has had a date with everyone they could be paired with.")
 

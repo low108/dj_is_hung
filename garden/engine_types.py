@@ -56,6 +56,7 @@ class Situation:
     targets: tuple[str, ...] | None = None  # who this twin can act toward right now (None: anyone)
     must_talk: bool = False  # on a date, until both have spoken to each other: no keeping to oneself yet
     replying_to: tuple[str, str] | None = None  # (speaker, line): said to this twin today, not yet answered
+    leave_targets: tuple[str, ...] | None = None  # who it may ask to leave / go to the wall with (None: targets)
 
 
 def compatible(a: Twin, b: Twin) -> bool:

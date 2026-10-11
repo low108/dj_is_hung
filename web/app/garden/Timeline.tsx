@@ -19,6 +19,7 @@ type Marker = { id: string; emoji: string; label: string; matches: (e: TimelineE
 // proposals and wall crossings.
 const MARKERS: Marker[] = [
   { id: "wall_open", emoji: "🚪", label: "Everyone has met", matches: (e) => e.announcement_kind === "wall_open" },
+  { id: "pairing_day", emoji: "💍", label: "Pairing Day", matches: (e) => e.announcement_kind === "pairing_day" },
   { id: "separation", emoji: "💔", label: "Separation", matches: (e) => e.announcement_kind === "ended" },
   { id: "gathering", emoji: "🎉", label: "Gathering", matches: (e) => e.announcement_kind === "gathering" },
   { id: "seek_out", emoji: "👀", label: "Seek-out", matches: (e) => e.rung === "seek_out" },

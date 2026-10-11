@@ -54,7 +54,8 @@ function herDays(events: LogEvent[], her: string): Day[] {
       } else if (e.announcement_kind === "gathering") {
         d.kind = "gathering";
       }
-      if (about || e.announcement_kind === "gathering" || e.announcement_kind === "wall_open") d.news.push(e.announcement);
+      if (about || e.announcement_kind === "gathering" || e.announcement_kind === "wall_open" || e.announcement_kind === "pairing_day")
+        d.news.push(e.announcement);
       continue;
     }
     if (d.kind === "waiting" && partner) {

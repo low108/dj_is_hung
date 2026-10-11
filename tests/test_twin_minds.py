@@ -59,7 +59,7 @@ class Inspector(KeywordModel):
         options = {ln.strip()[1]: ln.strip()[4:] for ln in question.splitlines()
                    if len(ln.strip()) > 3 and ln.strip()[0] == "(" and ln.strip()[2] == ")"}
         self.n += 1
-        prefer = (("Go beyond the wall", "Ask someone to leave") if self.n % 23 == 0
+        prefer = (("Go beyond the wall", "Ask the one you love") if self.n % 23 == 0
                   else ("Check your Coordinator device",) if self.n % 17 == 0
                   else ("Keep talking", "Spend time talking"))
         for letter, text in options.items():

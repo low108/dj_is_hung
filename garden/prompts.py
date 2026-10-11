@@ -24,7 +24,7 @@ def prompt_texts() -> dict:
         "instructions": [world_text.INSTRUCTIONS, world_text.PERSONA_SECTION],
         "rung_options": dict(world_text.RUNG_OPTIONS),
         "templates": {k: getattr(world_text, k) for k in (
-            "OBSERVE_DAY", "OBSERVE_NOTE", "OBSERVE_SAID", "OBSERVE_I_SAID", "OBSERVE_REFLECTION", "OBSERVE_INVITED", "ASK_ACTION", "ASK_TARGET", "ASK_SPEECH",
+            "OBSERVE_DAY", "OBSERVE_NOTE", "OBSERVE_SAID", "OBSERVE_I_SAID", "OBSERVE_REFLECTION", "OBSERVE_INVITED", "ASK_ACTION", "ASK_TARGET", "ASK_LEAVE_TARGET", "ASK_SPEECH", "PEOPLE_LABEL",
             "ASK_DATE", "ASK_GATHERING", "ASK_AFTER_LINE", "ASK_OPENER", "ASK_REPLY")},
         "date_options": dict(world_text.DATE_OPTIONS),
         "reflection_prompt": REFLECTION_PROMPT,

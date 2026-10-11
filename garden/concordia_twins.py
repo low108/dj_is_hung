@@ -16,7 +16,7 @@ from . import immersion
 from .engine_types import LEAVING_RUNGS, SOCIAL_RUNGS, Action, Breach, Event, Reflection, Rung, Situation, Twin
 from .llm import hash_embedder
 from .world_text import (ASK_ACTION, ASK_AFTER_LINE, ASK_DATE, ASK_GATHERING, ASK_OPENER, ASK_REPLY, ASK_SPEECH,
-                         ASK_TARGET, DATE_OPTIONS, INSTRUCTIONS, NEEDS_TARGET, OBSERVE_DAY, OBSERVE_NOTE,
+                         ASK_LEAVE_TARGET, ASK_TARGET, DATE_OPTIONS, PEOPLE_LABEL, INSTRUCTIONS, NEEDS_TARGET, OBSERVE_DAY, OBSERVE_NOTE,
                          OBSERVE_INVITED, OBSERVE_I_SAID, OBSERVE_REFLECTION, OBSERVE_SAID, PERSONA_SECTION, RUNG_OPTIONS, SPEAKS,
                          BASE_MEMORIES, STANDING_MEMORIES)
 
@@ -25,6 +25,7 @@ from .world_text import (ASK_ACTION, ASK_AFTER_LINE, ASK_DATE, ASK_GATHERING, AS
 _DATE_SOLO = (Rung.GO_TO,)
 RESAMPLES = 2  # extra attempts for a line or reflection that breaks immersion
 DIARY_LABEL = "\nWhat {name} wrote each evening"
+PEOPLE_LINES, PEOPLE_LINE_CHARS = 5, 220  # per person: their last lines to this twin, each kept short
 
 
 class Diary(constant.Constant):
@@ -34,6 +35,25 @@ class Diary(constant.Constant):
 
     def add(self, line: str) -> None:
         self._state = f"{self._state}\n{line}".strip()
+
+
+class People(constant.Constant):
+    """What each person has said to this twin, word for word, under their name, kept in view all run:
+    in live runs Lina recalled something specific on only 18 of 44 second dates, and pinned one man's
+    facts on another ('Ravi, ... Cincinnati') or claimed them ('I came here from Southern California
+    too'), once the first date had scrolled out of her last 100 observations."""
+
+    def __init__(self, pre_act_label: str):
+        super().__init__("", pre_act_label=pre_act_label)
+        self._said: dict[str, list[tuple[int, str]]] = {}
+
+    def add(self, person: str, day: int, line: str) -> None:
+        lines = self._said.setdefault(person, [])
+        lines.append((day, line if len(line) <= PEOPLE_LINE_CHARS else line[:PEOPLE_LINE_CHARS].rsplit(" ", 1)[0] + "…"))
+        del lines[:-PEOPLE_LINES]
+        self._state = "\n".join(
+            f"{who} (spoke to me on days {', '.join(str(d) for d in dict.fromkeys(d for d, _ in said))}): "
+            + " / ".join(f'"{text}"' for _, text in said) for who, said in self._said.items())
 T = TypeVar("T")
 
 
@@ -158,6 +178,7 @@ class ConcordiaTwins:
         self._personas = personas or {}
         self._agents: dict[str, object] = {}
         self._diaries: dict[str, Diary] = {}
+        self._people: dict[str, People] = {}
         self._recent: dict[str, list[str]] = {}  # each twin's last lines said by it or to it
         self.redos: list[Breach] = []  # lines re-asked for being empty or an echo (kept for the run log)
         self._standing_in_play: dict[str, bool] = {}
@@ -177,6 +198,7 @@ class ConcordiaTwins:
         if event.target in self._agents and event.rung is not Rung.GO_BEYOND_WALL and event.say:
             self._agents[event.target].observe(OBSERVE_SAID.format(day=event.day, speaker=event.twin,
                                                                    line=event.say))
+            self._people[event.target].add(event.twin, event.day, event.say)
         if event.twin in self._agents and event.target and event.say:
             self._agents[event.twin].observe(OBSERVE_I_SAID.format(day=event.day, listener=event.target,
                                                                    line=event.say))
@@ -199,9 +221,10 @@ class ConcordiaTwins:
             for memory in (*world, *persona):
                 bank.add(memory)
             self._diaries[twin.alias] = Diary("", pre_act_label=DIARY_LABEL.format(name=twin.alias))
+            self._people[twin.alias] = People(PEOPLE_LABEL.format(name=twin.alias))
             params = {"name": twin.alias, "custom_instructions": instructions(twin.alias, world, persona),
-                      "extra_components": {"Diary": self._diaries[twin.alias]},
-                      "extra_components_index": {"Diary": 1}}  # right after who it is, before today
+                      "extra_components": {"Diary": self._diaries[twin.alias], "People": self._people[twin.alias]},
+                      "extra_components_index": {"Diary": 1, "People": 2}}  # after who it is, before today
             self._agents[twin.alias] = minimal.Entity(params=params).build(self._model, bank)
             self._standing_in_play[twin.alias] = standing_in_play
         return self._agents[twin.alias]
@@ -229,10 +252,15 @@ class ConcordiaTwins:
         rung = options[choice]
 
         candidates = names  # the engine passes only who this twin can act toward right now
+        leaving = rung in LEAVING_RUNGS
+        if leaving and situation and situation.leave_targets is not None:
+            candidates = list(situation.leave_targets)  # anyone it has met, not only today's date
         target = None
         if rung.value in NEEDS_TARGET and candidates:
+            question = (ASK_LEAVE_TARGET.format() if leaving  # (unescapes {{name}} for Concordia)
+                        else ASK_TARGET.format(action=RUNG_OPTIONS[rung.value].lower()))
             target = candidates[0] if len(candidates) == 1 else agent.act(entity_lib.ActionSpec(
-                call_to_action=ASK_TARGET.format(action=RUNG_OPTIONS[rung.value].lower()),
+                call_to_action=question,
                 output_type=entity_lib.OutputType.CHOICE,
                 options=tuple(candidates),
             ))

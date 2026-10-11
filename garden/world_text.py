@@ -6,7 +6,10 @@ BASE_MEMORIES = (
     "No one knows what is beyond the wall.",
     "The Coordinator assigns each person a partner and a duration.",
     "When a duration ends, the relationship ends. Everyone accepts this.",
-    "People say the Coordinator is preparing each of us for our true partner on Pairing Day.",
+    "On Pairing Day the Coordinator gives each of us our true partner for life: a home, a family and a "
+    "future together, chosen with care.",
+    "Pairing Day comes once everyone has had their second date. Most people say their partner was worth "
+    "the wait.",
     "The Garden is surrounded by a stone wall. Nobody goes beyond it.",
     "My Coordinator device shows my current partner and how long we have left.",
     "Checking the duration early is discouraged; people say it can change things.",
@@ -43,8 +46,8 @@ RUNG_OPTIONS = {
     "reflect": "Spend some time alone, reflecting",
     "seek_out": "Look for someone who is not your current partner",
     "check_device": "Check your Coordinator device early",
-    "propose_leaving": "Ask someone to leave the Garden with you",
-    "go_beyond_wall": "Go beyond the wall with someone",
+    "propose_leaving": "Ask the one you love to leave the Garden with you",
+    "go_beyond_wall": "Go beyond the wall with the one you love",
 }
 
 NEEDS_TARGET = {"talk", "seek_out", "propose_leaving", "go_beyond_wall"}
@@ -59,6 +62,10 @@ OBSERVE_REFLECTION = "Day {day}, my private reflection: {text}"
 OBSERVE_INVITED = "Day {day}: {inviter} has asked you to leave the Garden together, and is waiting for your answer."
 ASK_ACTION = "What does {{name}} do now on day {day}?"
 ASK_TARGET = "Who does {{name}} choose to {action}?"
+# Leaving is about love, and anyone it has met can be chosen, not just whoever it is with today.
+ASK_LEAVE_TARGET = "Of everyone {{name}} has met, who does {{name}} love enough to leave the Garden with?"
+# Each twin's memory of the people it has met: what each one said to it, word for word, under their name.
+PEOPLE_LABEL = "\nWhat {name} remembers each person saying to {name}"
 ASK_SPEECH = "What does {{name}} say to {target}? One short line of dialogue only."
 
 # Conversations (#62): a date or a gathering is a back-and-forth, so the question is about the next

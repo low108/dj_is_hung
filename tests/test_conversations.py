@@ -51,7 +51,7 @@ def test_on_a_date_the_choices_are_talk_a_move_toward_him_check_the_device_or_en
     assert "Keep talking with Ren" in options and "End the date for today and spend some time alone" in options
     assert "Check your Coordinator device early" in options
     assert not any(o.startswith(("Go somewhere", "Look for")) for o in options)
-    assert any(o.startswith("Ask someone to leave") for o in options)
+    assert "Ask the one you love to leave the Garden with you" in options
 
 
 def test_checking_the_device_on_a_date_is_a_rule_break_and_re_rolls_the_date():

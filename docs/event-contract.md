@@ -19,7 +19,7 @@ Every twin action and every Coordinator announcement in a run becomes one **Feed
 | `say` | string | The twin's line (empty if none; a line out of character is never streamed: that turn is `reflect`) |
 | `standing` | string | The twin's Standing in words after the action; empty when Standing isn't in play |
 | `announcement` | string \| null | The Coordinator's words |
-| `announcement_kind` | string \| null | `paired`, `ended`, `shortened`, `changed`, `gathering`, `rumour`, `wall_open` (everyone has had a date; leaving is offered from now on): timeline markers |
+| `announcement_kind` | string \| null | `paired`, `ended`, `shortened`, `changed`, `gathering`, `rumour`, `wall_open` (everyone has had a date; leaving is offered from now on), `pairing_day` (the run ended with everyone staying): timeline markers |
 | `line` | string | Ready-made feed sentence, e.g. "Day 6: Mara sought out Ren at the gathering." |
 
 **Ordering:** a day's start-of-day announcements come first, then each action in the order twins acted, each followed by any announcement it caused (e.g. "changed" after a device check). Private things never stream: wall decisions are only visible as actions, and reflections aren't streamed.
