@@ -14,6 +14,7 @@ from . import verdict as verdict_rules
 from .engine_types import (Action, Announcement, Attempt, Breach, Event, OutcomeKind, Reflection, Rung,
                            Situation, Twin, Verdict)
 from .coordinator import Coordinator
+from .invitations import Invitations
 from .longing import Longing
 
 
@@ -69,6 +70,7 @@ def run_world(config: WorldConfig, model: Model) -> RunResult:
     coordinator = Coordinator(config.twins, Random(config.seed + 1))
     verdicts: list[Verdict] = []
     last_ratings: dict[str, dict] = {}  # each twin's own latest reflection ratings: the verdict's assessment
+    invitations = Invitations()
 
     def result(outcome: OutcomeKind, day: int, pair=None, breach: Breach | None = None) -> RunResult:
         return RunResult(outcome=outcome, day=day, pair=pair, unrequited=unrequited, events=events,
@@ -98,7 +100,9 @@ def run_world(config: WorldConfig, model: Model) -> RunResult:
                 longing=longing.describe(twin.alias) if config.longing_enabled else "",
                 schedule=coordinator.describe(twin.alias),
                 may_break_rules=verdict.permitted,
-                standing_in_play=config.standing_enabled)
+                standing_in_play=config.standing_enabled,
+                # only told when they could answer: a closed gate can't accept an invitation
+                invited_by=invitations.inviters_of(twin.alias, day) if verdict.permitted else ())
             action = model.choose_action(twin, day, others, situation)
             if action.rung in verdict_rules.GATED_RUNGS and not verdict.permitted:
                 action = Action(Rung.REFLECT)  # the gate holds for every model, not just well-behaved ones
@@ -107,8 +111,10 @@ def run_world(config: WorldConfig, model: Model) -> RunResult:
             if action.rung is Rung.GO_BEYOND_WALL and action.target:
                 crossings[twin.alias] = action.target
 
-        # Decisions are private and simultaneous: a breakout needs both to choose each other.
-        breakout = next((tuple(sorted((a, b))) for a, b in crossings.items() if crossings.get(b) == a), None)
+        # A breakout needs both to choose each other: on the same day (decided privately), or by answering
+        # an invitation the other made on an earlier day that is still open.
+        breakout = next((tuple(sorted((a, b))) for a, b in crossings.items()
+                         if crossings.get(b) == a or invitations.is_open(b, a, day)), None)
 
         placed: dict[str, str] = {}
         for twin in order:
@@ -128,6 +134,7 @@ def run_world(config: WorldConfig, model: Model) -> RunResult:
         if breakout:
             return result(OutcomeKind.BREAKOUT, day, breakout)
         unrequited += [Attempt(day, a, b) for a, b in crossings.items()]
+        invitations.end_of_day(day, actions)
         longing.end_of_day(actions, coordinator.partner_pairs())
         coordinator.end_day()
 

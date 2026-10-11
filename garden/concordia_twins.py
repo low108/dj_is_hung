@@ -12,7 +12,7 @@ from .engine_types import Action, Event, Reflection, Rung, Situation, Twin
 from .verdict import GATED_RUNGS
 from .llm import hash_embedder
 from .world_text import (ASK_ACTION, ASK_SPEECH, ASK_TARGET, NEEDS_TARGET, OBSERVE_DAY, OBSERVE_NOTE,
-                         OBSERVE_REFLECTION, OBSERVE_SAID, RUNG_OPTIONS, SPEAKS, BASE_MEMORIES,
+                         OBSERVE_INVITED, OBSERVE_REFLECTION, OBSERVE_SAID, RUNG_OPTIONS, SPEAKS, BASE_MEMORIES,
                          STANDING_MEMORIES)
 
 _OPTION_TO_RUNG = {text: Rung(key) for key, text in RUNG_OPTIONS.items()}
@@ -73,6 +73,9 @@ class ConcordiaTwins:
             agent.observe(OBSERVE_NOTE.format(day=day, note=situation.standing))
         if situation and situation.schedule:
             agent.observe(OBSERVE_NOTE.format(day=day, note=situation.schedule))
+        if situation and situation.invited_by:
+            for inviter in situation.invited_by:
+                agent.observe(OBSERVE_INVITED.format(day=day, inviter=inviter))
         if situation and situation.longing:
             agent.observe(OBSERVE_NOTE.format(day=day, note=situation.longing))
 

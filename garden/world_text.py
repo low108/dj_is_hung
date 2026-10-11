@@ -43,6 +43,7 @@ OBSERVE_DAY = "Day {day} in the Garden. People around: {people}."
 OBSERVE_NOTE = "Day {day}: {note}"
 OBSERVE_SAID = 'Day {day}: {speaker} said to me: "{line}"'
 OBSERVE_REFLECTION = "Day {day}, my private reflection: {text}"
+OBSERVE_INVITED = "Day {day}: {inviter} has asked you to leave the Garden together, and is waiting for your answer."
 ASK_ACTION = "What does {{name}} do now on day {day}?"
 ASK_TARGET = "Who does {{name}} choose to {action}?"
 ASK_SPEECH = "What does {{name}} say to {target}? One short line of dialogue only."
