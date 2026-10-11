@@ -56,14 +56,11 @@ def serialize(result) -> dict:
     }
 
 
-def serialize_simulation(sim: Simulation, woman: str = demo.WOMAN, men: list[str] | None = None,
-                         matched: frozenset[str] | None = None, personas: dict[str, str] | None = None,
-                         highlight_model=None) -> dict:
+def serialize_simulation(sim: Simulation, pool: pool_lib.PoolSetup, highlight_model=None) -> dict:
     """`highlight_model` captions the top candidates' highlights (None: template captions)."""
-    men = demo.MEN if men is None else men
+    woman, men, matched = pool.woman, pool.men, pool.matched
     scores = score(list(sim.records), woman, men)
-    picked = highlights.for_simulation(list(sim.records), scores, woman,
-                                       demo.PERSONAS if personas is None else personas, highlight_model)
+    picked = highlights.for_simulation(list(sim.records), scores, woman, pool.personas, highlight_model)
     runs = [{"run_id": r.spec.run_id, "model": r.spec.model, "price": r.spec.price.value, "seed": r.spec.seed,
              "wall_seconds": round(r.wall_seconds, 2), "error": r.error,
              "result": serialize(r.result) if r.result else None} for r in sim.records]
@@ -185,7 +182,7 @@ def create_app(store: SimulationStore | None = None, log_runs: bool = False,
                                  observe=lambda spec: recorders[spec.run_id].observer,
                                  on_finished=save_replay, max_days=req.max_days)
             done = record | {"status": "done", "pool_iid": req.pool_iid,
-                             **serialize_simulation(sim, woman, men, matched, personas, highlight_model())}
+                             **serialize_simulation(sim, pool, highlight_model())}
             if app.state.log_runs:
                 done["log_dir"] = str(write_simulation(sim_id, sim, woman, men))
             store.save(sim_id, done)

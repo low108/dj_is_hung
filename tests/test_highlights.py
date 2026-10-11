@@ -37,7 +37,8 @@ def test_each_top_candidate_gets_three_to_four_highlights_and_an_exact_pattern_l
     [ren] = highlights.for_simulation(records, scores, WOMAN, demo.PERSONAS)
     assert ren.candidate == MAN and 3 <= len(ren.highlights) <= 4
     assert ren.pattern == "Her twin gave up her Pairing Day for his twin in 2 of 2 runs where it cost her the most."
-    assert ren.highlights[0].kind == "go_beyond_wall" and ren.highlights[0].price == "high"
+    assert [h.kind for h in ren.highlights[:2]] == ["breakout", "go_beyond_wall"]
+    assert ren.highlights[0].price == "high"
 
 
 def test_every_highlight_is_labelled_as_the_twins():
@@ -90,10 +91,39 @@ def test_no_highlights_for_men_she_never_broke_out_with():
     assert [h.candidate for h in highlights.for_simulation(records, scores, WOMAN, demo.PERSONAS)] == [MAN]
 
 
-def test_highlights_reach_the_api_result_without_model_calls_for_scripted_runs():
+def test_highlights_reach_the_api_result_without_model_calls_for_scripted_runs(monkeypatch):
+    monkeypatch.setenv("HIGHLIGHT_MODEL", "gemini:would-cost-money")  # ignored: scripted runs never call a model
     body = TestClient(create_app(MemoryStore())).post("/simulations", json={"scenario": "breakout"}).json()
     [ren] = body["highlights"]
     assert ren["candidate"] == MAN and ren["source"] == "template" and 3 <= len(ren["highlights"]) <= 4
+    assert len({h["caption"] for h in ren["highlights"]}) == len(ren["highlights"])
+
+
+def test_three_letter_and_inflected_persona_facts_are_blocked():
+    terms = highlights.personal_terms({"A": "I study law.\nI am a nurse.\nBefore university, I lived in NYC."})
+    for caption in ("Her twin, a law student, waited for his twin.", "Her twin left nursing behind for his twin.",
+                    "Her twin missed NYC less with his twin."):
+        assert not highlights.acceptable(caption, terms), caption
+    assert highlights.acceptable("Her twin waited at the wall for his twin, and he came.", terms)
+
+
+def test_the_model_never_sees_what_the_twins_said():
+    script = SCRIPT | {(WOMAN, 1): Action(TALK, MAN, "As a nurse in Chicago I rarely get evenings off.")}
+    specs = plan(["fake:a"], list(PriceLevel), [0])
+    sim = run_simulation(specs, demo.POOL, lambda spec: ScriptedModel(script), max_days=5)
+    records = list(sim.records)
+    model = Captioner([])
+    highlights.for_simulation(records, score(records, WOMAN, demo.MEN), WOMAN, demo.PERSONAS, model)
+    assert "Chicago" not in model.prompts[0] and "nurse" not in model.prompts[0]
+
+
+def test_a_rejected_caption_never_repeats_a_template():
+    records, scores = simulate()
+    model = Captioner([{"moment": 1, "caption": "the nurse"}, {"moment": 1, "caption": "again"},
+                       {"moment": True, "caption": "Her twin, moment True."}])
+    [ren] = highlights.for_simulation(records, scores, WOMAN, demo.PERSONAS, model)
+    captions = [h.caption for h in ren.highlights]
+    assert len(set(captions)) == len(captions) and 3 <= len(captions) <= 4
 
 
 def test_template_highlights_show_different_moments_before_repeating():

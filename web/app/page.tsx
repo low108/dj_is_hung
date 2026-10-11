@@ -48,7 +48,16 @@ type FeedEvent = {
 type CandidateHighlights = {
   candidate: string;
   pattern: string;
-  highlights: { run_id: string; price: Price; day: number; kind: string; caption: string; label: string }[];
+  highlights: {
+    run_id: string;
+    price: Price;
+    day: number;
+    kind: string;
+    from_her: boolean;
+    caption: string;
+    label: string;
+  }[];
+  source: "model" | "template";
 };
 
 const TOAST_MS = 4000;
@@ -571,11 +580,11 @@ export default function Home() {
               <h3>Highlights from the Garden</h3>
               {sim.highlights!.map((c) => (
                 <article key={c.candidate} className="highlight-card">
-                  <h4>{c.candidate}</h4>
+                  <h4>{c.candidate}&apos;s twin</h4>
                   <p className="pattern">{c.pattern}</p>
                   <ul>
-                    {c.highlights.map((h) => (
-                      <li key={`${h.run_id}-${h.day}-${h.kind}`}>
+                    {c.highlights.map((h, i) => (
+                      <li key={i}>
                         <span>{h.caption}</span>
                         <span className="meta"> {h.label}</span>
                       </li>
