@@ -63,8 +63,8 @@ export default function GardenMap({
 }) {
   const host = useRef<HTMLDivElement>(null);
   const queue = useRef<MapEvent[]>([]);
-  const firstSeq = useRef(startAt).current; // fixed for this map's life (a jump remounts it via `key`)
-  const seen = useRef(firstSeq - 1); // events before it only decide where twins begin
+  const firstSeq = useRef(startAt); // fixed for this map's life (a jump remounts it via `key`)
+  const seen = useRef(firstSeq.current - 1); // events before it only decide where twins begin
   const resumePlayback = useRef<(() => void) | null>(null);
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
@@ -72,7 +72,7 @@ export default function GardenMap({
   onAnnouncementRef.current = onAnnouncement;
   const onProgressRef = useRef(onProgress);
   onProgressRef.current = onProgress;
-  const lastPlayed = useRef({ day: 0, seq: firstSeq - 1 });
+  const lastPlayed = useRef({ day: 0, seq: firstSeq.current - 1 });
   const eventsRef = useRef(events);
   eventsRef.current = events;
   const finaleRef = useRef(finale);
@@ -147,7 +147,7 @@ export default function GardenMap({
           // Where each twin was just before the first event played (home if they hadn't moved yet).
           const placeBefore = new Map<string, Place>();
           for (const e of eventsRef.current)
-            if (e.seq < firstSeq && e.twin && isPlace(e.place)) placeBefore.set(e.twin, e.place);
+            if (e.seq < firstSeq.current && e.twin && isPlace(e.place)) placeBefore.set(e.twin, e.place);
           twins.forEach((name, i) => {
             const at = spotFor(placeBefore.get(name) ?? "home", i);
             const body = this.add.circle(at.col * TILE + TILE / 2, at.row * TILE + TILE / 2, 6, COLORS[i % COLORS.length]);
