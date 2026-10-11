@@ -195,7 +195,7 @@ export default function GardenMap({
         const midRow = (GATE.rowFrom + GATE.rowTo) / 2;
         both.forEach((s, i) => {
           s.emoji.setText("🧱");
-          const row = midRow + (i === 0 ? -1 : 1);
+          const row = midRow + (i === 0 ? -0.5 : 0.5); // side by side, hand in hand
           const atGate = { x: (GATE.col - 1) * TILE + TILE / 2, y: row * TILE + TILE / 2 };
           scene.tweens.chain({
             targets: s.body,
