@@ -84,3 +84,36 @@ def test_a_quote_inside_a_line_stays_whole():
 
 def test_narration_between_two_quoted_parts_is_dropped():
     assert _clean_speech("Lina", '"Hi," she says, "how are you?"') == "Hi, how are you?"
+
+
+def test_checking_the_device_shows_that_twin_the_re_rolled_time_at_once():
+    model = Recording({("Mara", 1, 2): Action(Rung.CHECK_DEVICE), ("Ren", 1, 2): Action(Rung.REFLECT)})
+    run_world(WorldConfig((MARA, REN), max_days=1, seed=1), model)
+    [(who, day, text)] = model.notices  # only Mara learns it, the moment she checks
+    assert (who, day) == ("Mara", 1) and text.startswith("I checked my Coordinator device early. It says my time with Ren")
+
+
+def test_the_device_reading_is_the_date_after_the_re_roll():
+    from random import Random
+
+    from garden.coordinator import Assignment, Coordinator
+
+    c = Coordinator((MARA, REN), Random(3))
+    c.assignments.append(Assignment("Mara", "Ren", 4))
+    c.on_action(1, "Mara", Action(Rung.CHECK_DEVICE))
+    left = c.assignment_of("Mara").days_left
+    expected = "ends tonight" if left <= 1 else f"has {left} more days"
+    assert c.device_reading("Mara") == f"I checked my Coordinator device early. It says my time with Ren {expected}."
+    c.assignments.clear()
+    assert "no one assigned" in c.device_reading("Mara")
+
+
+def test_a_concordia_twin_remembers_what_its_device_showed():
+    from concordia.components.agent import memory
+
+    twins = ConcordiaTwins(CountingModel(KeywordModel({}), letter_choices=False))
+    twins.meet((MARA, REN))
+    twins.notice("Mara", 2, "I checked my Coordinator device early. It says my time with Ren ends tonight.")
+    remembered = twins._agents["Mara"].get_component(memory.DEFAULT_MEMORY_COMPONENT_KEY,
+                                                      type_=memory.AssociativeMemory).get_all_memories_as_text()
+    assert any("Day 2: I checked my Coordinator device early" in m for m in remembered)

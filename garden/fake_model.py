@@ -21,6 +21,10 @@ class ScriptedModel:
         self.reflections = reflections or {}  # optional scripted reflection text by (twin, day)
         self._seen: list[str] = []
         self._turn: dict[tuple[str, int], int] = {}
+        self.notices: list[tuple[str, int, str]] = []  # (twin, day, text): what only that twin learned
+
+    def notice(self, twin: str, day: int, text: str) -> None:
+        self.notices.append((twin, day, text))
 
     def meet(self, twins: tuple[Twin, ...], standing_in_play: bool = True) -> None:
         for t in twins:

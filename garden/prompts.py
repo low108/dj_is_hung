@@ -33,7 +33,8 @@ def prompt_texts() -> dict:
         "standing_words": sorted({standing.describe(v) for v in range(standing.START + 1)}),
         "longing_words": [words for _, words in LONGING_WORDS],
         "schedule": {k: getattr(coordinator, k) for k in (
-            "SCHEDULE_PAIRED", "SCHEDULE_ONE_DAY", "SCHEDULE_DAYS", "SCHEDULE_UNASSIGNED", "SCHEDULE_GATHERING", "RUMOUR")},
+            "SCHEDULE_PAIRED", "SCHEDULE_ONE_DAY", "SCHEDULE_DAYS", "SCHEDULE_UNASSIGNED", "SCHEDULE_GATHERING", "RUMOUR",
+            "DEVICE_READING", "DEVICE_LAST_DAY", "DEVICE_DAYS", "DEVICE_NO_DATE")},
     }
 
 

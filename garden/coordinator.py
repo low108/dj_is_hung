@@ -40,6 +40,10 @@ SCHEDULE_PAIRED = "You are on a date with {partner}, assigned by the Coordinator
 SCHEDULE_ONE_DAY, SCHEDULE_DAYS = "one more day", "{days} more days"
 SCHEDULE_UNASSIGNED = "You are between assignments today and keep to yourself."
 SCHEDULE_GATHERING = "Today everyone gathers at the hall."
+# What the device shows the twin who checks it, at once (it also re-rolls the date's length, see on_action).
+DEVICE_READING = "I checked my Coordinator device early. It says my time with {partner} {time_left}."
+DEVICE_LAST_DAY, DEVICE_DAYS = "ends tonight", "has {days} more days"
+DEVICE_NO_DATE = "I checked my Coordinator device early. It shows no one assigned to me right now."
 
 
 class Phase(str, Enum):
@@ -170,6 +174,14 @@ class Coordinator:
 
     def partner_pairs(self) -> set[frozenset[str]]:
         return {frozenset((p.first, p.second)) for p in self.assignments}
+
+    def device_reading(self, who: str) -> str:
+        """What a twin sees when it checks its device: its date's time left (after any re-roll)."""
+        pair = self.assignment_of(who)
+        if not pair:
+            return DEVICE_NO_DATE
+        time_left = DEVICE_LAST_DAY if pair.days_left <= 1 else DEVICE_DAYS.format(days=pair.days_left)
+        return DEVICE_READING.format(partner=pair.partner_of(who), time_left=time_left)
 
     def describe(self, who: str) -> str:
         """A twin's day in words: its date, the gathering, or a day to itself."""

@@ -39,7 +39,8 @@ MAX_SLIPS_PER_TWIN = 2  # more slips than this from one twin in a run, and the r
 
 class Model(Protocol):
     """Decides what a twin does next. Real models (Gemini, Gemma, ILMU) and the fake model share this.
-    Optional extras the engine reads if present: `after_day(day, events) -> list[Reflection]` and
+    Optional extras the engine reads if present: `after_day(day, events) -> list[Reflection]`,
+    `notice(twin, day, text)` (something only that twin learns, at once: what its device shows) and
     `breaks: list[Breach]` (lines the model rejected and re-asked for breaking immersion)."""
 
     def choose_action(self, twin: Twin, day: int, others: tuple[Twin, ...], situation: Situation) -> Action: ...
@@ -181,6 +182,7 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
         spoken: set[str] = set()  # on a date: who has said something to their partner today
         unanswered: dict[str, tuple[str, str]] = {}  # twin -> (speaker, line) said to it, not yet answered
         hear = getattr(model, "hear", None)
+        notice = getattr(model, "notice", None)
         while True:
             ready = [t for t in active if t.alias not in done and turns[t.alias] < config.max_turns]
             if not ready:
@@ -223,6 +225,8 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
                 spoken.add(twin.alias)
             todays.append((twin.alias, action))
             coordinator.on_action(day, twin.alias, action)
+            if notice and action.rung is Rung.CHECK_DEVICE:  # it sees the (re-rolled) time left at once
+                notice(twin.alias, day, coordinator.device_reading(twin.alias))
             invitations.on_action(twin.alias, action, day)
             before = standing[twin.alias]
             if config.standing_enabled:

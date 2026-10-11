@@ -128,6 +128,11 @@ class ConcordiaTwins:
             self._agents[event.target].observe(OBSERVE_SAID.format(day=event.day, speaker=event.twin,
                                                                    line=event.say))
 
+    def notice(self, alias: str, day: int, text: str) -> None:
+        """Something only this twin learns, the moment it happens (what its device shows)."""
+        if alias in self._agents:
+            self._agents[alias].observe(OBSERVE_NOTE.format(day=day, note=text))
+
     def _agent(self, twin: Twin, standing_in_play: bool = True):
         if twin.alias not in self._agents:
             bank = basic_associative_memory.AssociativeMemoryBank(sentence_embedder=hash_embedder)
