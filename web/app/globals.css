@@ -309,3 +309,25 @@ button.link {
   min-width: 0;
   max-width: 100%;
 }
+
+.highlights {
+  margin-top: 16px;
+}
+.highlight-card {
+  border-top: 1px solid #00000014;
+  padding: 8px 0;
+}
+.highlight-card h4 {
+  margin: 4px 0;
+}
+.highlight-card .pattern {
+  font-style: italic;
+  margin: 4px 0 6px;
+}
+.highlight-card ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.highlight-card li {
+  margin: 3px 0;
+}

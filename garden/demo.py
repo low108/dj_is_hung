@@ -33,3 +33,16 @@ def make_twin_model(spec: RunSpec, personas: dict[str, str] = PERSONAS, fake_sce
     from .llm import make_model
 
     return ConcordiaTwins(make_model(spec.model), personas)
+
+
+def make_highlight_model(models: list[str]):
+    """The model that captions highlights (C3): HIGHLIGHT_MODEL if set, else the simulation's first real
+    model. None for an all-scripted simulation: highlights then use template captions (no API calls)."""
+    import os
+
+    spec = os.environ.get("HIGHLIGHT_MODEL") or next((m for m in models if not is_fake(m)), None)
+    if spec is None:
+        return None
+    from .llm import make_model
+
+    return make_model(spec)

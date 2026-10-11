@@ -45,6 +45,12 @@ type FeedEvent = {
   announcement: string | null;
 };
 
+type CandidateHighlights = {
+  candidate: string;
+  pattern: string;
+  highlights: { run_id: string; price: Price; day: number; kind: string; caption: string; label: string }[];
+};
+
 const TOAST_MS = 4000;
 const SPEEDS = [1, 2, 4];
 const START: Progress = { day: 0, seq: -1, caughtUp: false };
@@ -107,6 +113,7 @@ type Simulation = {
     pairs_in_order: number;
   } | null;
   scored_runs?: number;
+  highlights?: CandidateHighlights[];
   result?: Outcome & { events: SimEvent[] };
 };
 
@@ -558,6 +565,26 @@ export default function Home() {
                 ? "All of them ranked above the men she didn't match with."
                 : `They were ranked above the others in ${pct(sim.answer_key.pairs_in_order)} of comparisons (50% = chance).`}
             </p>
+          )}
+          {(sim.highlights?.length ?? 0) > 0 && (
+            <div className="highlights" data-testid="highlights">
+              <h3>Highlights from the Garden</h3>
+              {sim.highlights!.map((c) => (
+                <article key={c.candidate} className="highlight-card">
+                  <h4>{c.candidate}</h4>
+                  <p className="pattern">{c.pattern}</p>
+                  <ul>
+                    {c.highlights.map((h) => (
+                      <li key={`${h.run_id}-${h.day}-${h.kind}`}>
+                        <span>{h.caption}</span>
+                        <span className="meta"> {h.label}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </article>
+              ))}
+              <p className="meta">These moments are between the twins in the simulation, not the real people.</p>
+            </div>
           )}
           <p className="meta">
             Scored on her twin&apos;s willingness only. Excluded runs are not counted.
