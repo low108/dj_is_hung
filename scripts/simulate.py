@@ -43,14 +43,16 @@ def main() -> None:
             print(f"  {r.spec.run_id} {r.spec.model:24s} seed {r.spec.seed}: ERROR {r.error}")
             continue
         outcome = f"{res.outcome.value} day {res.day}" + (f" {'+'.join(res.pair)}" if res.pair else "")
+        if res.slips:
+            outcome += f" | {len(res.slips)} slip(s) dropped"
         if res.breach:
-            outcome += f' — {res.breach.twin}: "{res.breach.phrase}" in "{res.breach.text[:120]}"'
+            outcome += f' — flagged: {res.breach.twin} kept slipping ("{res.breach.phrase}" in "{res.breach.text[:120]}")'
         outcome += f" | wall opened day {res.wall_opened}" if res.wall_opened else " | wall never opened"
         print(f"  {r.spec.run_id} {r.spec.model:24s} seed {r.spec.seed}: {outcome}")
     log_dir = write_simulation(f"sim-{int(time.time())}", sim, woman, men)
     print(f"logs: {log_dir}")
     pairs = Counter("+".join(r.result.pair) for r in sim.scorable if r.result.pair)
-    print("breakouts:", dict(pairs) or "none", "| excluded:", sum(1 for r in sim.records if r.result and not r.result.scorable))
+    print("breakouts:", dict(pairs) or "none", "| flagged:", sum(1 for r in sim.records if r.result and not r.result.scorable))
     ranking = score(list(sim.records), woman, men)
     for i, c in enumerate(ranking, 1):
         print(f"  {i}. {c.candidate:8s} {c.breakouts}/{c.runs} runs with a date "

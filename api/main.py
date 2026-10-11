@@ -36,7 +36,7 @@ class TextModel(Protocol):
 class StartSimulation(BaseModel):
     """models x seeds runs. 'fake:*' models are scripted (no API calls)."""
 
-    scenario: Literal["breakout", "unrequited", "timeout", "excluded"] = "breakout"  # for fake models
+    scenario: Literal["breakout", "unrequited", "timeout", "flagged"] = "breakout"  # for fake models
     models: list[str] = demo.FAKE_MODELS  # scripted stand-ins; [demo.ENSEMBLE_ALIAS] = the real ensemble
     seeds: list[int] = [0, 1]
     max_days: int | None = None  # a safety cap; a run ends when every man has had his dates (or a breakout)

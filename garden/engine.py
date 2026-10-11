@@ -34,13 +34,13 @@ class WorldConfig:
     longing_enabled: bool = True   # off: twins don't hear their longing
 
 
-MAX_BREAKS_PER_TWIN = 2  # more rejected lines than this from one twin in a run, and the run is excluded
+MAX_SLIPS_PER_TWIN = 2  # more slips than this from one twin in a run, and the run is flagged for review (#64)
 
 
 class Model(Protocol):
     """Decides what a twin does next. Real models (Gemini, Gemma, ILMU) and the fake model share this.
     Optional extras the engine reads if present: `after_day(day, events) -> list[Reflection]` and
-    `breaks: list[Breach]` (lines rejected for breaking immersion)."""
+    `breaks: list[Breach]` (lines the model rejected and re-asked for breaking immersion)."""
 
     def choose_action(self, twin: Twin, day: int, others: tuple[Twin, ...], situation: Situation) -> Action: ...
 
@@ -57,8 +57,9 @@ class RunResult:
     reflections: list[Reflection] = field(default_factory=list)
     announcements: list[Announcement] = field(default_factory=list)  # Coordinator, for the viewer
     wall_opened: int | None = None  # the day proposing to leave and the wall were first offered
-    breach: Breach | None = None  # set when the run was excluded
+    breach: Breach | None = None  # the slip that flagged the run (see `flagged`)
     immersion_breaks: list[Breach] = field(default_factory=list)  # rejected and re-asked by the model
+    slips: list[Breach] = field(default_factory=list)  # still out of character after re-asking: dropped (#64)
     dated: list[tuple[str, str]] = field(default_factory=list)  # every pair sent on at least one date
 
     def had_date(self, a: str, b: str) -> bool:
@@ -69,8 +70,13 @@ class RunResult:
         return len(self.immersion_breaks)
 
     @property
+    def flagged(self) -> bool:
+        """A twin kept slipping out of character: the run is kept, but reviewed rather than scored."""
+        return self.breach is not None
+
+    @property
     def scorable(self) -> bool:
-        return self.outcome is not OutcomeKind.EXCLUDED
+        return self.outcome is not OutcomeKind.EXCLUDED and not self.flagged
 
 
 FeedHook = Callable[[Event | Announcement, str], None]
@@ -94,15 +100,16 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
     # everyone present, so no one man is with her the moment it opens. Then it's each twin's own choice.
     wall_opened: int | None = None if config.wall_lock else 1
     invitations = Invitations()
+    slips: list[Breach] = []  # text that slipped out of character: dropped, the turn kept to itself
     meet = getattr(model, "meet", None)
     if meet:  # models with memory get to know every twin before day one (idle twins reflect too)
         meet(config.twins, config.standing_enabled)
 
-    def result(outcome: OutcomeKind, day: int, pair=None, breach: Breach | None = None) -> RunResult:
+    def result(outcome: OutcomeKind, day: int, pair=None) -> RunResult:
         return RunResult(outcome=outcome, day=day, pair=pair, unrequited=unrequited, events=events,
                          standing=standing, longing={t.alias: longing.of(t.alias) for t in config.twins},
                          reflections=reflections, announcements=coordinator.announcements,
-                         wall_opened=wall_opened, breach=breach,
+                         wall_opened=wall_opened, breach=repeated_slipper(), slips=slips,
                          immersion_breaks=list(getattr(model, "breaks", [])),
                          dated=sorted(tuple(sorted(p)) for p in coordinator.dates))
 
@@ -116,26 +123,20 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
                 days_left=max(pair.days_left, 0) if pair else None,
                 standing=word_for(t.alias),
                 longing_hearts=longing.hearts(t.alias) if config.longing_enabled else {},
-                # a reflection that breaks immersion is never put on screen (like speech)
-                reflection="" if immersion.breaking_phrase(reflected.get(t.alias, "")) else reflected.get(t.alias, "")))
+                reflection=reflected.get(t.alias, "")))  # a reflection that slipped is already dropped
         return out
 
     def emit_states(day: int, reflected: dict[str, str] | None = None) -> None:
         if on_state:
             on_state(twin_states(day, reflected or {}))
 
-    def repeated_breaker(breaks: list[Breach]) -> Breach | None:
+    def repeated_slipper() -> Breach | None:
+        """The slip that took a twin past MAX_SLIPS_PER_TWIN, if any."""
         counts: dict[str, int] = {}
-        for b in breaks:
-            counts[b.twin] = counts.get(b.twin, 0) + 1
-            if counts[b.twin] > MAX_BREAKS_PER_TWIN:
-                return b
-        return None
-
-    def find_breach(day: int, writings: list[tuple[str, str]]) -> Breach | None:
-        for twin, text in writings:
-            if phrase := immersion.breaking_phrase(text):
-                return Breach(day, twin, phrase, text)
+        for s in slips:
+            counts[s.twin] = counts.get(s.twin, 0) + 1
+            if counts[s.twin] > MAX_SLIPS_PER_TWIN:
+                return s
         return None
 
     emitted = 0  # announcements already streamed
@@ -190,8 +191,9 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
             targets = targets_for(twin, phase)
             wall_open = wall_opened is not None
             partner = coordinator.partner_of(twin.alias) if phase is Phase.DATE else None
-            # A date day opens with a conversation: neither can withdraw until both have spoken.
-            must_talk = bool(partner) and not {twin.alias, partner} <= spoken
+            # A date day opens with a conversation: neither can withdraw until both have spoken (unless
+            # the partner has already gone for the day).
+            must_talk = bool(partner) and partner not in done and not {twin.alias, partner} <= spoken
             replying_to = unanswered.pop(twin.alias, None)  # one chance to answer: its next turn
             situation = Situation(
                 standing=standing_rules.describe(standing[twin.alias]) if config.standing_enabled else "",
@@ -213,6 +215,10 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
                 action = Action(Rung.TALK, action.target, action.say)  # on a date they're already together
             if must_talk and action.rung not in SOCIAL_RUNGS:
                 action = Action(Rung.TALK, partner, action.say)  # not yet: they haven't both spoken
+            if phrase := immersion.breaking_phrase(action.say):
+                # Out of character (#64): nobody hears it, and the twin keeps to itself this turn instead.
+                slips.append(Breach(day, twin.alias, phrase, action.say))
+                action = Action(Rung.REFLECT)
             if partner and action.rung in SOCIAL_RUNGS and action.target == partner:
                 spoken.add(twin.alias)
             todays.append((twin.alias, action))
@@ -225,9 +231,7 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
             event = Event(day, twin.alias, action.rung, action.target, action.say, before,
                           standing[twin.alias], placed[twin.alias])
             events.append(event)
-            # speech that breaks immersion ends the run as excluded; don't put it on screen
-            shown = event if not immersion.breaking_phrase(action.say) else replace(event, say="")
-            stream(shown, word_for(twin.alias))
+            stream(event, word_for(twin.alias))
             if hear:
                 hear(event)  # whoever was spoken to hears it now, mid-conversation
             if action.say and action.target and action.rung in SOCIAL_RUNGS and action.rung is not Rung.GO_BEYOND_WALL:
@@ -258,9 +262,6 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
                     events[i] = replace(e, standing_after=0)
 
         todays_events = [e for e in events if e.day == day]
-        if found := find_breach(day, [(e.twin, e.say) for e in todays_events]):
-            emit_states(day)
-            return result(OutcomeKind.EXCLUDED, day, breach=found)  # checked first: a broken run proves nothing
         if breakout:
             emit_states(day)  # the last evening: the pair's Standing is gone
             return result(OutcomeKind.BREAKOUT, day, breakout)
@@ -275,13 +276,12 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
 
         after_day = getattr(model, "after_day", None)  # models with memory hear what happened today
         todays = (after_day(day, todays_events) or []) if after_day else []
+        for i, r in enumerate(todays):
+            if phrase := immersion.breaking_phrase(r.text):  # out of character: dropped, not shown (#64)
+                slips.append(Breach(day, r.twin, phrase, r.text))
+                todays[i] = replace(r, text="")
         emit_states(day, {r.twin: r.text for r in todays})
-        if after_day:
-            reflections.extend(todays)
-            if found := find_breach(day, [(r.twin, r.text) for r in todays]):
-                return result(OutcomeKind.EXCLUDED, day, breach=found)
-        if found := repeated_breaker(getattr(model, "breaks", [])):
-            return result(OutcomeKind.EXCLUDED, day, breach=found)  # clean resamples, but it kept slipping
+        reflections.extend(todays)
         if coordinator.rounds_complete():  # every man has had his dates: nobody broke out
             return result(OutcomeKind.TIMEOUT, day)
 

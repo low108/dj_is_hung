@@ -66,7 +66,7 @@ def compatible(a: Twin, b: Twin) -> bool:
 class OutcomeKind(str, Enum):
     BREAKOUT = "breakout"
     TIMEOUT = "timeout"
-    EXCLUDED = "excluded"  # a twin broke immersion; the run is not scored
+    EXCLUDED = "excluded"  # older runs only: a slip used to end the run (a slip now skips the turn, #64)
 
 
 @dataclass(frozen=True)

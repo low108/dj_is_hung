@@ -52,6 +52,7 @@ def write_simulation(sim_id: str, sim: Simulation, woman: str, men: list[str], *
             "day_ended": res.day if res else None, "scorable": bool(res and res.scorable),
             "breach": res.breach.phrase if res and res.breach else None, "error": rec.error,
             "immersion_resamples": res.immersion_resamples if res else None,
+            "slips": len(res.slips) if res else None, "flagged": bool(res and res.flagged),
             "immersion_break_phrases": [b.phrase for b in res.immersion_breaks] if res else [],
             "wall_seconds": round(rec.wall_seconds, 2),
         })

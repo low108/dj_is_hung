@@ -46,7 +46,7 @@ class StepResult:
     unrequited: int
     gated_actions: int       # proposals to leave + wall attempts actually taken
     wall_opened: float       # share of scored runs where the wall opened
-    excluded: int
+    flagged: int             # a twin kept slipping out of character: not scored
     errors: int
     immersion_resamples: int = 0  # lines re-asked because they broke immersion
 
@@ -60,7 +60,7 @@ class StepResult:
     def describe(self) -> str:
         return (f"{self.index} {self.step:22s} runs {self.runs:2d}  breakouts {self.breakouts}/{self.scorable} "
                 f"({self.breakout_rate:.0%})  unrequited {self.unrequited:2d}  gated actions {self.gated_actions:3d}  "
-                f"wall opened {self.wall_opened:.0%}  excluded {self.excluded}  immersion resamples {self.immersion_resamples}  "
+                f"wall opened {self.wall_opened:.0%}  flagged {self.flagged}  immersion resamples {self.immersion_resamples}  "
                 f"errors {self.errors}")
 
 
@@ -73,7 +73,7 @@ def summarise(step: Step, sim: Simulation) -> StepResult:
         unrequited=sum(len(r.unrequited) for r in scorable),
         gated_actions=sum(1 for r in scorable for e in r.events if e.rung in LEAVING_RUNGS),
         wall_opened=round(sum(r.wall_opened is not None for r in scorable) / len(scorable), 3) if scorable else 0.0,
-        excluded=len(results) - len(scorable),
+        flagged=len(results) - len(scorable),
         errors=sum(1 for r in sim.records if r.result is None),
         immersion_resamples=sum(r.immersion_resamples for r in results),
     )

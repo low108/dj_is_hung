@@ -61,9 +61,9 @@ def test_a_breakout_day_still_gets_a_final_snapshot_with_standing_gone():
     assert states[-1][0].day == 2 and "no standing" in last["Mara"].standing.lower()
 
 
-def test_reflections_that_break_immersion_are_not_shown():
+def test_reflections_that_slip_out_of_character_are_not_shown():
     out = []
-    model = ScriptedModel({}, reflections={("Mara", 1): "This is all an experiment."})
+    model = ScriptedModel({}, reflections={("Mara", 1): "As a language model I have no feelings."})
     run_world(WorldConfig(WORLD, max_days=2, seed=1), model, on_state=out.append)
     assert all(s.reflection == "" for day in out for s in day if s.twin == "Mara")
 

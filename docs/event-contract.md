@@ -16,7 +16,7 @@ Every twin action and every Coordinator announcement in a run becomes one **Feed
 | `rung` | string \| null | `talk`, `go_to`, `reflect`, `seek_out`, `check_device`, `propose_leaving`, `go_beyond_wall` |
 | `target` | string \| null | Who the action was aimed at |
 | `emoji` | string | Status emoji for the sprite (📣 for announcements) |
-| `say` | string | The twin's line (empty if none, or if it broke immersion) |
+| `say` | string | The twin's line (empty if none; a line out of character is never streamed: that turn is `reflect`) |
 | `standing` | string | The twin's Standing in words after the action; empty when Standing isn't in play |
 | `announcement` | string \| null | The Coordinator's words |
 | `announcement_kind` | string \| null | `paired`, `ended`, `shortened`, `changed`, `gathering`, `rumour`, `wall_open` (everyone has had a date; leaving is offered from now on): timeline markers |

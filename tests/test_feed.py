@@ -42,10 +42,10 @@ def test_an_announcement_caused_by_an_action_comes_after_it():
     assert changed > check
 
 
-def test_speech_that_breaks_immersion_is_not_streamed():
-    feed = collect({("Jun", 2): Action(Rung.TALK, "Mara", "Is this all a simulation?")})
+def test_speech_that_slips_out_of_character_is_never_streamed():
+    feed = collect({("Jun", 2): Action(Rung.TALK, "Mara", "As an AI, I can't answer that.")})
     jun = next(e for e in feed if e["twin"] == "Jun" and e["day"] == 2)
-    assert jun["say"] == ""
+    assert jun["say"] == "" and jun["rung"] == "reflect"  # he kept to himself that turn instead
 
 
 def test_no_standing_words_when_standing_is_off():

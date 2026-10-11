@@ -79,3 +79,12 @@ def test_a_steady_record_outranks_a_lucky_one():
     records += [rec(i, ("Mara", "Ren"), dated=[("Mara", "Ren")]) for i in range(1, 10)] + [rec(10)]
     # Kai 1/2 vs Ren 9/10: Ren first, even though a lone breakout is a higher share of fewer runs.
     assert score(records, "Mara", MEN)[0].candidate == "Ren"
+
+
+def test_flagged_runs_are_kept_but_not_scored():
+    from garden.engine_types import Breach
+
+    flagged = rec(0, ("Mara", "Ren"))
+    flagged.result.breach = Breach(3, "Ren", "language model", "As a language model...")
+    s = by_name(score([flagged, rec(1)], "Mara", MEN))
+    assert flagged.result.flagged and s["Ren"].breakouts == 0 and s["Ren"].runs == 1

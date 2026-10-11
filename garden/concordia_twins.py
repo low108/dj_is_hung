@@ -84,8 +84,8 @@ def _clean_speech(alias: str, text: str) -> str:
     """Keep only the spoken line. Models often add narration ('looks over and asks, "..."')
     and Concordia prefixes the speaker's name; when there's a quote, the quoted line is the line: from
     the first opening quote to the last closing one, so a quote inside the line stays whole, and
-    narration between two quoted parts is dropped."""
-    text = text.strip()
+    narration between two quoted parts is dropped. Model framing ("I'll respond as …") goes first."""
+    text = immersion.strip_framing(text)
     for quote_open, quote_close in (('"', '"'), ("“", "”")):
         start = text.find(quote_open)
         if start != -1:
@@ -180,10 +180,9 @@ class ConcordiaTwins:
 
     def _resample_while_breaking(self, alias: str, day: int, sample: Callable[[], T],
                                  text_of: Callable[[T], str]) -> T:
-        """Sample, and re-ask up to RESAMPLES times while the text breaks immersion. A one-off glitch
-        (a model refusing the roleplay, "this experiment") shouldn't throw away a whole run; every
-        rejected text is recorded in `breaks`, and the engine excludes the run if a twin keeps breaking
-        immersion (on every attempt, or too often across the run)."""
+        """Sample, and re-ask up to RESAMPLES times while the text breaks immersion (a model refusing the
+        roleplay, say). Every rejected text is recorded in `breaks`. Text still out of character after
+        that is the engine's to drop (#64): the turn becomes keeping to itself, a reflection is dropped."""
         result = sample()
         for _ in range(RESAMPLES):
             phrase = immersion.breaking_phrase(text_of(result))
@@ -206,7 +205,7 @@ class ConcordiaTwins:
             )
             text, ratings = self._resample_while_breaking(alias, day, lambda: parse_reflection(alias, agent.act(spec)),
                                                           lambda r: r[0])
-            if text:
+            if text and not immersion.breaking_phrase(text):  # one that slipped is never remembered (#64)
                 agent.observe(OBSERVE_REFLECTION.format(day=day, text=text))
             reflections.append(Reflection(day, alias, text, ratings))
         return reflections
@@ -233,7 +232,7 @@ def parse_reflection(alias: str, raw: str) -> tuple[str, dict]:
             value = value.strip().strip(".<>*").strip()
             ratings[key.lower()] = int(value) if value.isdigit() else value
         text = text[: m.start()].strip()
-    return _tidy(text), ratings
+    return _tidy(immersion.strip_framing(text)), ratings
 
 
 def _tidy(text: str, max_sentences: int = 3, max_chars: int = 600) -> str:

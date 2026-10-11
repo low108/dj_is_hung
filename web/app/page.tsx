@@ -14,7 +14,7 @@ import { API_URL, ApiError, authedFetch, firebaseAuth } from "./firebase";
 const GardenMap = dynamic(() => import("./garden/GardenMap"), { ssr: false });
 
 
-type Scenario = "breakout" | "unrequited" | "timeout" | "excluded";
+type Scenario = "breakout" | "unrequited" | "timeout" | "flagged";
 
 type SimEvent = { day: number; twin: string; rung: string; target: string | null; say: string };
 
@@ -60,8 +60,10 @@ const SPEEDS = [1, 2, 4];
 const START: Progress = { day: 0, seq: -1, caughtUp: false };
 
 type Outcome = {
-  outcome: "breakout" | "timeout" | "excluded";
+  outcome: "breakout" | "timeout" | "excluded"; // "excluded": older runs, before a slip only skipped a turn
   breach?: { day: number; twin: string; phrase: string } | null;
+  flagged?: boolean; // a twin kept slipping out of character: kept, but not scored (#64)
+  slips?: number;
   day: number;
   pair: [string, string] | null;
   unrequited: { day: number; twin: string; target: string }[];
@@ -153,6 +155,8 @@ function headline(r: Outcome | undefined): string {
   if (!r) return "Running…";
   if (r.outcome === "excluded" && r.breach)
     return `Excluded: ${r.breach.twin} broke immersion on day ${r.breach.day} ("${r.breach.phrase}") — not scored`;
+  if (r.flagged && r.breach)
+    return `Flagged for review: ${r.breach.twin} kept slipping out of character (day ${r.breach.day}, "${r.breach.phrase}") — not scored`;
   if (r.outcome === "breakout") return `Breakout on day ${r.day}: ${r.pair?.join(" and ")} crossed the wall together`;
   if (r.unrequited.length > 0) {
     const a = r.unrequited[0];
@@ -468,7 +472,7 @@ export default function Home() {
             <option value="breakout">Breakout</option>
             <option value="unrequited">Unrequited</option>
             <option value="timeout">Timeout</option>
-            <option value="excluded">Excluded (immersion broken)</option>
+            <option value="flagged">Flagged (a twin keeps slipping out of character)</option>
           </select>
         </label>
         <button onClick={start} disabled={busy}>

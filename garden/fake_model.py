@@ -82,14 +82,14 @@ class ScenarioModel(ScriptedModel):
         if self.name == "unrequited" and me == man and woman in here and permitted and self._once("wall"):
             self.turn_of(twin, day)
             return Action(Rung.GO_BEYOND_WALL, woman, "Come with me.")
-        if self.name == "excluded" and me == man and woman in here and self._once("slip"):
+        if self.name == "flagged" and me == man and woman in here:  # slips every time he can speak to her
             self.turn_of(twin, day)
-            return Action(Rung.TALK, woman, "Sometimes I think this is all a simulation.")
+            return Action(Rung.TALK, woman, "As an AI language model, I can't pretend to have feelings.")
         return super().choose_action(twin, day, others, situation)
 
 
 def scenario(name: str, woman: str, man: str) -> ScriptedModel:
-    """Ready-made stories for the tracer-bullet demo: breakout, unrequited, timeout, excluded."""
-    if name not in ("breakout", "unrequited", "timeout", "excluded"):
+    """Ready-made stories for the tracer-bullet demo: breakout, unrequited, timeout, flagged."""
+    if name not in ("breakout", "unrequited", "timeout", "flagged"):
         raise ValueError(f"unknown scenario: {name}")
     return ScenarioModel(name, woman, man)
