@@ -20,9 +20,14 @@ MEN = [t.alias for t in POOL if t.alias != WOMAN]
 FAKE_MODELS = ["fake:a", "fake:b", "fake:c"]  # three stand-ins for the three-model ensemble (F4)
 
 
+def is_fake(model: str) -> bool:
+    """Scripted stand-in (no API calls), as opposed to "provider:model"."""
+    return model.startswith("fake")
+
+
 def make_twin_model(spec: RunSpec, personas: dict[str, str] = PERSONAS, fake_scenario: str = "breakout"):
     """A fresh model for one run: scripted for 'fake:*' specs, otherwise Concordia twins on that LLM."""
-    if spec.model.startswith("fake"):
+    if is_fake(spec.model):
         return scenario(fake_scenario, WOMAN, MAN)
     from .concordia_twins import ConcordiaTwins  # heavy import, only for real runs
     from .llm import make_model

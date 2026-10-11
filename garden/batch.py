@@ -69,7 +69,7 @@ def featured_spec(specs: list[RunSpec]) -> RunSpec | None:
 
 @dataclass(frozen=True)
 class Observer:
-    """What the viewer listens to on the featured run."""
+    """What listens to a run as it happens (the replay recorder, which also feeds the live viewer)."""
 
     on_feed: FeedHook | None = None
     on_state: StateHook | None = None
@@ -89,15 +89,17 @@ def run_one(spec: RunSpec, twins: tuple[Twin, ...], make_model: Callable[[RunSpe
 
 
 def run_simulation(specs: list[RunSpec], twins: tuple[Twin, ...], make_model: Callable[[RunSpec], Model],
-                   parallelism: int = 12, featured: Callable[[RunSpec], Observer] | None = None,
-                   **config) -> Simulation:
-    """`featured(spec)` gives the Observer for the featured run (see featured_spec), which streams live."""
+                   parallelism: int = 12, observe: Callable[[RunSpec], Observer | None] | None = None,
+                   on_finished: Callable[[RunRecord], None] | None = None, **config) -> Simulation:
+    """`observe(spec)` gives each run's Observer (or None); `on_finished(record)` is called as each run
+    ends, on that run's thread, so its replay is saved even if a later run never finishes."""
     start = time.perf_counter()
-    first = featured_spec(specs)
 
     def go(spec: RunSpec) -> RunRecord:
-        observer = featured(spec) if featured and first and spec.run_id == first.run_id else None
-        return run_one(spec, twins, make_model, observer, **config)
+        record = run_one(spec, twins, make_model, observe(spec) if observe else None, **config)
+        if on_finished:
+            on_finished(record)
+        return record
 
     with ThreadPoolExecutor(max_workers=max(1, parallelism)) as pool:
         records = list(pool.map(go, specs))

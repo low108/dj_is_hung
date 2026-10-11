@@ -1,12 +1,13 @@
 # Event contract
 
-Every twin action and every Coordinator announcement in the featured run becomes one **FeedEvent**, streamed the moment it happens. Defined in `garden/feed.py` (`FeedEvent`, `SCHEMA`, `validate`); this page is the human-readable copy for viewer work.
+Every twin action and every Coordinator announcement in a run becomes one **FeedEvent**. The featured run's events stream the moment they happen; every run's events are also saved for replay when it finishes. Defined in `garden/feed.py` (`FeedEvent`, `SCHEMA`, `validate`); this page is the human-readable copy for viewer work.
 
-Read them with `GET /simulations/{id}/events?after=<last seq>`. In Firestore they live in `simulations/{id}/events`.
+- **Live** (featured run): `GET /simulations/{id}/events?after=<last seq>`. In Firestore they live in `simulations/{id}/events`.
+- **Replay** (any finished run): `GET /replays` lists saved runs (newest simulation first); `GET /replays/{sim_id}/{run_id}` returns the run's `events` (this contract), its evening snapshots (`twin_states`, as `GET /simulations/{id}/twins`), and its outcome. Replays are files under `data/replays/` and never re-run anything.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `run_id` | string | The featured run (the first high-price run) |
+| `run_id` | string | The run (live: the featured run, the first high-price one) |
 | `seq` | int | 0, 1, 2… with no gaps: the cursor for polling |
 | `day` | int | Simulated day, from 1 |
 | `tick` | int | Order within the day |
