@@ -11,12 +11,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from garden import demo
+from garden import demo, feed
 from garden import pools as pool_lib
 from garden import speed_dating as sd
+from garden.batch import PriceLevel, RunSpec, Simulation, featured_spec, plan, run_simulation
 from garden.runlog import write_simulation
-from garden import feed
-from garden.batch import PriceLevel, RunSpec, Simulation, plan, run_simulation
 from garden.scoring import score
 
 from .store import SimulationStore, default_store
@@ -125,20 +124,26 @@ def create_app(store: SimulationStore | None = None, log_runs: bool = False) -> 
             "runs_planned": len(specs),
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
-        record["featured_run"] = specs[0].run_id if specs else None
+        featured = featured_spec(specs)
+        record["featured_run"] = featured.run_id if featured else None
         app.state.store.save(sim_id, record)
         store = app.state.store
 
         def stream(spec: RunSpec):
-            seq = [0]
-
-            def on_day(day, events, announcements, standing_words):
-                items = feed.day_feed(spec.run_id, seq[0], day, events, announcements, standing_words)
-                seq[0] += len(items)
-                store.add_events(sim_id, [i.to_dict() for i in items])
-            return on_day
+            cursor = feed.FeedCursor(spec.run_id)
+            return lambda item, word: store.add_events(sim_id, [cursor(item, word).to_dict()])
 
         def run() -> dict:
+            try:
+                return finish()
+            except Exception as e:  # a background failure must not leave the record "running" forever
+                failed = record | {"status": "failed", "error": f"{type(e).__name__}: {e}"}
+                store.save(sim_id, failed)
+                if not req.background:
+                    raise
+                return failed
+
+        def finish() -> dict:
             # Runs fan out on local threads for now; A3 moves the same RunSpecs to Cloud Run Job tasks.
             sim = run_simulation(specs, twins,
                                  lambda spec: demo.make_twin_model(spec, personas, fake_scenario=req.scenario),

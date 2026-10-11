@@ -28,7 +28,8 @@ type FeedEvent = { seq: number; day: number; twin: string | null; emoji: string;
 
 type Simulation = {
   id: string;
-  status: "running" | "done";
+  status: "running" | "done" | "failed";
+  error?: string;
   featured_run?: string;
   runs?: { run_id: string }[];
   wall_seconds?: number;
@@ -83,6 +84,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [feedEvents, setFeedEvents] = useState<FeedEvent[]>([]);
+  const [featuredRun, setFeaturedRun] = useState<string | null>(null);
 
   async function follow(id: string) {
     // Poll the featured run's events and the simulation until it's done (Firestore listeners later).
@@ -97,7 +99,9 @@ export default function Home() {
         after = fresh[fresh.length - 1].seq;
         setFeedEvents((old) => [...old, ...fresh]);
       }
+      if (!simRes.ok) throw new Error(`API returned ${simRes.status} while following the simulation`);
       const current: Simulation = await simRes.json();
+      if (current.status === "failed") throw new Error(current.error ?? "the simulation failed");
       if (current.status === "done") {
         setSim(current);
         return;
@@ -111,6 +115,7 @@ export default function Home() {
     setError(null);
     setSim(null);
     setFeedEvents([]);
+    setFeaturedRun(null);
     try {
       const res = await fetch(`${API_URL}/simulations`, {
         method: "POST",
@@ -124,6 +129,7 @@ export default function Home() {
       });
       if (!res.ok) throw new Error(`API returned ${res.status}`);
       const started: Simulation = await res.json();
+      setFeaturedRun(started.featured_run ?? null);
       await follow(started.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -181,7 +187,9 @@ export default function Home() {
 
       {feedEvents.length > 0 && (
         <section className="result feed" data-testid="feed">
-          <h2>{busy ? "Live" : "Replay"}: the Garden, run {sim?.featured_run ?? "r00"}</h2>
+          <h2>
+            {busy ? "Live" : "Finished"}: the Garden, run {featuredRun}
+          </h2>
           <ol>
             {feedEvents.map((e) => (
               <li key={e.seq} className={e.twin ? "" : "announcement"}>

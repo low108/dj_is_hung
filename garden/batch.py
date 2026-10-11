@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from itertools import product
 
-from .engine import DayHook, Model, RunResult, WorldConfig, run_world
+from .engine import FeedHook, Model, RunResult, WorldConfig, run_world
 from .engine_types import Twin
 
 
@@ -62,27 +62,32 @@ def plan(models: list[str], prices: list[PriceLevel], seeds: list[int]) -> list[
     return [RunSpec(f"r{i:02d}", m, p, s) for i, (m, p, s) in enumerate(product(models, prices, seeds))]
 
 
+def featured_spec(specs: list[RunSpec]) -> RunSpec | None:
+    """The run shown live: the first high-price run (the most at stake), else the first run."""
+    return next((s for s in specs if s.price is PriceLevel.HIGH), specs[0] if specs else None)
+
+
 def run_one(spec: RunSpec, twins: tuple[Twin, ...], make_model: Callable[[RunSpec], Model],
-            on_day: DayHook | None = None, **config) -> RunRecord:
+            on_feed: FeedHook | None = None, **config) -> RunRecord:
     """One run; extra keyword arguments go to WorldConfig (e.g. max_days, thresholds)."""
     start = time.perf_counter()
     try:
         world = WorldConfig(twins, seed=spec.seed, standing_start=spec.price.standing, **config)
-        result = run_world(world, make_model(spec), on_day)  # a fresh model per run: twins carry memories
+        result = run_world(world, make_model(spec), on_feed)  # a fresh model per run: twins carry memories
         return RunRecord(spec, result, time.perf_counter() - start)
     except Exception as e:  # one failed run must not sink the simulation
         return RunRecord(spec, None, time.perf_counter() - start, f"{type(e).__name__}: {e}")
 
 
 def run_simulation(specs: list[RunSpec], twins: tuple[Twin, ...], make_model: Callable[[RunSpec], Model],
-                   parallelism: int = 12, featured: Callable[[RunSpec], DayHook] | None = None,
+                   parallelism: int = 12, featured: Callable[[RunSpec], FeedHook] | None = None,
                    **config) -> Simulation:
-    """`featured(spec)` gives the day hook for the featured run (the first spec), whose days stream live."""
+    """`featured(spec)` gives the feed hook for the featured run (see featured_spec), which streams live."""
     start = time.perf_counter()
-    first = specs[0].run_id if specs else None
+    first = featured_spec(specs)
 
     def go(spec: RunSpec) -> RunRecord:
-        hook = featured(spec) if featured and spec.run_id == first else None
+        hook = featured(spec) if featured and first and spec.run_id == first.run_id else None
         return run_one(spec, twins, make_model, hook, **config)
 
     with ThreadPoolExecutor(max_workers=max(1, parallelism)) as pool:

@@ -26,7 +26,7 @@ class MemoryStore:
     def get(self, sim_id: str) -> dict | None:
         with self._lock:
             record = self._records.get(sim_id)
-            return dict(record) if record else None
+            return dict(record) if record is not None else None
 
     def add_events(self, sim_id: str, events: list[dict]) -> None:
         with self._lock:
@@ -54,7 +54,7 @@ class FirestoreStore:
     def add_events(self, sim_id: str, events: list[dict]) -> None:
         batch = self._db.batch()
         sub = self._col.document(sim_id).collection("events")
-        for e in events:  # document id = zero-padded seq, so ordering by id is ordering by seq
+        for e in events:
             batch.set(sub.document(f"{e['seq']:06d}"), e)
         batch.commit()
 

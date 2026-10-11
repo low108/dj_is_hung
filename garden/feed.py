@@ -1,58 +1,62 @@
 """The event contract shared by the engine, the API and the viewer (live feed now, map in E2).
 
-One FeedEvent per twin action, plus one per Coordinator announcement (twin = None). `line` is the
-human-readable sentence for the text feed; the other fields are what the map needs to animate.
+One FeedEvent per twin action and per Coordinator announcement (twin = None), in the order they happen.
+`line` is the sentence for the text feed; the other fields are what the map needs to animate, and
+`announcement_kind` is what the timeline needs for its markers.
 """
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
+from types import NoneType, UnionType
+from typing import get_args, get_type_hints
 
-from .coordinator import PLACES
+from .coordinator import PLACES, Place
 from .engine_types import Announcement, Event, Rung
 
-EMOJI = {
-    Rung.TALK: "💬", Rung.GO_TO: "🚶", Rung.REFLECT: "📝", Rung.SEEK_OUT: "👀",
-    Rung.CHECK_DEVICE: "⌚", Rung.PROPOSE_LEAVING: "💌", Rung.GO_BEYOND_WALL: "🧱",
-}
 ANNOUNCEMENT_EMOJI = "📣"
+PLACE_WORDS = {Place.HOME: "at home", Place.CAFE: "at the café", Place.PARK: "in the park",
+               Place.GATHERING_HALL: "at the gathering", Place.COORDINATOR_OFFICE: "at the Coordinator's office",
+               Place.THE_WALL: "at the wall"}
 
-PLACE_WORDS = {"home": "at home", "cafe": "at the café", "park": "in the park",
-               "gathering_hall": "at the gathering", "coordinator_office": "at the Coordinator's office",
-               "the_wall": "at the wall"}
-
-VERBS = {
-    Rung.TALK: "talked with {target}", Rung.GO_TO: "wandered", Rung.REFLECT: "spent time alone",
-    Rung.SEEK_OUT: "sought out {target}", Rung.CHECK_DEVICE: "checked the device early",
-    Rung.PROPOSE_LEAVING: "asked {target} to leave the Garden together",
-    Rung.GO_BEYOND_WALL: "went to the wall, hoping {target} would follow",
+# rung -> (emoji, what the twin did)
+ACTIONS = {
+    Rung.TALK: ("💬", "talked with {target}"),
+    Rung.GO_TO: ("🚶", "wandered"),
+    Rung.REFLECT: ("📝", "spent time alone"),
+    Rung.SEEK_OUT: ("👀", "sought out {target}"),
+    Rung.CHECK_DEVICE: ("⌚", "checked the device early"),
+    Rung.PROPOSE_LEAVING: ("💌", "asked {target} to leave the Garden together"),
+    Rung.GO_BEYOND_WALL: ("🧱", "went to the wall, hoping {target} would follow"),
 }
 
 
 @dataclass(frozen=True)
 class FeedEvent:
     run_id: str
-    seq: int                   # increasing within a run: the viewer's cursor
+    seq: int                         # increasing within a run: the viewer's cursor
     day: int
-    tick: int                  # order within the day (announcements come first)
-    twin: str | None           # None for a Coordinator announcement
+    tick: int                        # order within the day
+    twin: str | None                 # None for a Coordinator announcement
     place: str | None
     rung: str | None
     target: str | None
     emoji: str
     say: str
-    standing: str              # the twin's Standing in words after the action ("" for announcements)
+    standing: str                    # the twin's Standing in words after the action ("" if not in play)
     announcement: str | None
+    announcement_kind: str | None    # paired, ended, shortened, changed, gathering, rumour
     line: str
 
     def to_dict(self) -> dict:
         return asdict(self)
 
 
-SCHEMA = {  # field -> allowed types; checked by validate() and the tests
-    "run_id": (str,), "seq": (int,), "day": (int,), "tick": (int,), "twin": (str, type(None)),
-    "place": (str, type(None)), "rung": (str, type(None)), "target": (str, type(None)), "emoji": (str,),
-    "say": (str,), "standing": (str,), "announcement": (str, type(None)), "line": (str,),
-}
+def _allowed(annotation) -> tuple[type, ...]:
+    args = get_args(annotation) if isinstance(annotation, UnionType) else ()
+    return tuple(a if a is not None else NoneType for a in args) or (annotation,)
+
+
+SCHEMA = {f.name: _allowed(t) for f, t in zip(fields(FeedEvent), get_type_hints(FeedEvent).values())}
 
 
 def validate(event: dict) -> None:
@@ -69,18 +73,32 @@ def validate(event: dict) -> None:
 
 
 def describe(e: Event) -> str:
-    verb = VERBS[e.rung].format(target=e.target or "someone")
-    return f"Day {e.day}: {e.twin} {verb} {PLACE_WORDS.get(e.place, '')}".rstrip() + "."
+    verb = ACTIONS[e.rung][1].format(target=e.target or "someone")
+    where = PLACE_WORDS.get(Place(e.place), "") if e.place else ""
+    return f"Day {e.day}: {e.twin} {verb} {where}".rstrip() + "."
 
 
-def day_feed(run_id: str, start_seq: int, day: int, events: list[Event], announcements: list[Announcement],
-             standing_words: dict[str, str]) -> list[FeedEvent]:
-    """One day's feed: that day's announcements, then each twin action in the order it happened."""
-    out: list[FeedEvent] = []
-    for a in announcements:
-        out.append(FeedEvent(run_id, start_seq + len(out), day, len(out), None, None, None, None,
-                             ANNOUNCEMENT_EMOJI, "", "", a.text, f"Day {day}: {a.text}"))
-    for e in events:
-        out.append(FeedEvent(run_id, start_seq + len(out), day, len(out), e.twin, e.place, e.rung.value, e.target,
-                             EMOJI[e.rung], e.say, standing_words.get(e.twin, ""), None, describe(e)))
-    return out
+class FeedCursor:
+    """Turns one run's engine output into FeedEvents with a gapless seq and per-day ticks."""
+
+    def __init__(self, run_id: str):
+        self.run_id = run_id
+        self.seq = 0
+        self._day, self._tick = 0, 0
+
+    def __call__(self, item: Event | Announcement, standing_word: str) -> FeedEvent:
+        if item.day != self._day:
+            self._day, self._tick = item.day, 0
+        if isinstance(item, Announcement):
+            event = FeedEvent(run_id=self.run_id, seq=self.seq, day=item.day, tick=self._tick, twin=None,
+                              place=None, rung=None, target=None, emoji=ANNOUNCEMENT_EMOJI, say="", standing="",
+                              announcement=item.text, announcement_kind=item.kind or None,
+                              line=f"Day {item.day}: {item.text}")
+        else:
+            event = FeedEvent(run_id=self.run_id, seq=self.seq, day=item.day, tick=self._tick, twin=item.twin,
+                              place=item.place, rung=item.rung.value, target=item.target,
+                              emoji=ACTIONS[item.rung][0], say=item.say, standing=standing_word,
+                              announcement=None, announcement_kind=None, line=describe(item))
+        self.seq += 1
+        self._tick += 1
+        return event
