@@ -71,6 +71,13 @@ def shared_pacer(key: tuple[str, str], requests_per_minute: int | None) -> Pacer
         return _PACERS.setdefault(key, Pacer(requests_per_minute))
 
 
+def _no_quota(error: Exception) -> bool:
+    """A 429 that waiting a minute won't fix: no quota for this model on the plan (Pro on the free
+    tier), or the day's quota is used up."""
+    text = str(error)
+    return "limit: 0" in text or "PerDay" in text
+
+
 class CountingModel(language_model.LanguageModel):
     """Counts every underlying text sample (choice retries included) and the time spent."""
 
@@ -90,15 +97,22 @@ class CountingModel(language_model.LanguageModel):
             self._pacer.wait()
 
     def sample_text(self, prompt: str, **kwargs) -> str:
+        return self._counted(prompt, lambda: self._inner.sample_text(prompt, **kwargs))
+
+    def sample_json(self, prompt: str, schema: type) -> str:
+        """JSON text matching the pydantic `schema` (the inner model must support structured output)."""
+        return self._counted(prompt, lambda: self._inner.sample_json(prompt, schema))
+
+    def _counted(self, prompt: str, call) -> str:
         for attempt in range(6):
             self._pace()
             start = time.perf_counter()  # model time excludes pacing and backoff waits
             try:
-                out = self._inner.sample_text(prompt, **kwargs)
+                out = call()
                 break
             except Exception as e:  # overloads (503) and rate limits (429) are temporary
                 code = getattr(e, "code", None) or getattr(e, "status_code", None)
-                if code not in (429, 500, 503) or attempt == 5:
+                if code not in (429, 500, 503) or attempt == 5 or _no_quota(e):
                     raise
                 with self._lock:
                     self.stats.retries += 1
@@ -176,6 +190,15 @@ class GenAIModel(language_model.LanguageModel):
         response = self._client.models.generate_content(model=self._name, contents=prompt, config=config)
         return response.text or ""  # blocked or empty replies come back as "" and are retried by the caller
 
+    def sample_json(self, prompt: str, schema: type) -> str:
+        """One call constrained to the pydantic `schema` (Gemini structured output)."""
+        from google.genai import types
+
+        config = types.GenerateContentConfig(response_mime_type="application/json", response_schema=schema,
+                                             temperature=TEXT_TEMPERATURE, max_output_tokens=8192)
+        response = self._client.models.generate_content(model=self._name, contents=prompt, config=config)
+        return response.text or ""
+
     def sample_choice(self, prompt: str, responses: Sequence[str], *, seed: int | None = None):
         raise NotImplementedError("wrap in CountingModel, which answers choices by letter")
 
@@ -203,6 +226,21 @@ class OpenAICompatModel(language_model.LanguageModel):
         if "</think>" in text:
             text = text.split("</think>", 1)[1]
         return text.strip()
+
+    def sample_json(self, prompt: str, schema: type) -> str:
+        """JSON mode plus the schema in the prompt (no schema enforcement here; the caller validates)."""
+        import json
+
+        spec = json.dumps(schema.model_json_schema())
+        response = self._client.chat.completions.create(
+            model=self._name,
+            messages=[{"role": "user", "content": f"{prompt}\n\nAnswer with JSON matching this schema:\n{spec}"}],
+            response_format={"type": "json_object"},
+            max_tokens=8192,
+            temperature=TEXT_TEMPERATURE,
+        )
+        text = response.choices[0].message.content or ""
+        return text.split("</think>", 1)[1] if "</think>" in text else text
 
     def sample_choice(self, prompt: str, responses: Sequence[str], *, seed: int | None = None):
         raise NotImplementedError("wrap in CountingModel, which answers choices by letter")

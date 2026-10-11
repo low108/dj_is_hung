@@ -11,6 +11,7 @@ import {
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { firebaseAuth } from "../firebase";
+import TwinReview, { type TwinSummary } from "./TwinReview";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
 
@@ -33,11 +34,17 @@ export default function Onboarding() {
   const [agreed, setAgreed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [twin, setTwin] = useState<TwinSummary | null>(null);
 
-  async function call(path: string, body?: unknown, who: User | null | undefined = user): Promise<Progress> {
+  async function call<T = Progress>(
+    path: string,
+    body?: unknown,
+    who: User | null | undefined = user,
+    method?: string,
+  ): Promise<T> {
     const token = await who!.getIdToken();
     const res = await fetch(`${API_URL}${path}`, {
-      method: body === undefined ? "GET" : "POST",
+      method: method ?? (body === undefined ? "GET" : "POST"),
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
@@ -74,11 +81,15 @@ export default function Onboarding() {
     setDraft("");
     setAgreed(false);
     setError(null);
+    setTwin(null);
     if (!user) return;
     let stale = false;
     call("/me/onboarding", undefined, user)
       .then((p) => !stale && setProgress(p))
       .catch((e) => !stale && setError(e instanceof Error ? e.message : String(e)));
+    call<TwinSummary>("/me/twin", undefined, user)
+      .then((t) => !stale && setTwin(t))
+      .catch(() => {}); // no twin yet
     return () => {
       stale = true;
     };
@@ -86,6 +97,21 @@ export default function Onboarding() {
   }, [user]);
 
   const current = progress?.current;
+
+  /** Twin steps share run()'s busy and error handling but update the twin, not the progress. */
+  async function twinStep(step: () => Promise<TwinSummary>): Promise<boolean> {
+    setBusy(true);
+    setError(null);
+    try {
+      setTwin(await step());
+      return true;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function submit() {
     if (!current || !draft.trim()) return;
@@ -152,8 +178,26 @@ export default function Onboarding() {
       {user && progress?.complete && (
         <section className="result" data-testid="done">
           <h2>That&apos;s everything</h2>
-          <p>Thank you. Your answers are saved; next we build your twin from them.</p>
+          <p>Thank you. Your answers are saved.</p>
+          <button disabled={busy} onClick={() => twinStep(() => call<TwinSummary>("/me/twin", {}))}>
+            {busy ? "Building your twin…" : twin ? "Rebuild my twin from my answers" : "Build my twin"}
+          </button>
+          {twin && (
+            <p className="meta">
+              Your twin can now date in the <Link href="/">Garden</Link>: pick &ldquo;My twin&rdquo; as the pool.
+            </p>
+          )}
         </section>
+      )}
+
+      {user && twin && (
+        <TwinReview
+          twin={twin}
+          busy={busy}
+          onSave={(section, text) =>
+            twinStep(() => call<TwinSummary>(`/me/twin/sections/${section}`, { text }, user, "PUT"))
+          }
+        />
       )}
 
       {error && <p className="error">{error}</p>}

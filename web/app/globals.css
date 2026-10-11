@@ -349,3 +349,30 @@ button.link {
   display: block;
   margin: 8px 0;
 }
+
+.twin-section {
+  border-top: 1px solid #00000014;
+  padding: 6px 0;
+}
+.twin-section h3 {
+  margin: 6px 0 2px;
+  font-size: 1rem;
+}
+.twin-review textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  padding: 8px;
+}
+.twin-traits {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin-top: 12px;
+}
+.twin-traits dt {
+  font-weight: 600;
+}
+.twin-traits dd {
+  margin: 0;
+}

@@ -27,10 +27,11 @@ def is_fake(model: str) -> bool:
     return model.startswith("fake")
 
 
-def make_twin_model(spec: RunSpec, personas: dict[str, str] = PERSONAS, fake_scenario: str = "breakout"):
+def make_twin_model(spec: RunSpec, personas: dict[str, str] = PERSONAS, fake_scenario: str = "breakout",
+                    woman: str = WOMAN):
     """A fresh model for one run: scripted for 'fake:*' specs, otherwise Concordia twins on that LLM."""
     if is_fake(spec.model):
-        return scenario(fake_scenario, WOMAN, MAN)
+        return scenario(fake_scenario, woman, MAN)
     from .concordia_twins import ConcordiaTwins  # heavy import, only for real runs
     from .llm import make_model
 
@@ -58,3 +59,25 @@ def make_followup_model():
     from .llm import FLASH, make_model
 
     return make_model(spec or f"gemini:{FLASH}")
+
+
+def with_her_twin(alias: str, persona: str, threshold: float):
+    """The demo pool's men with a user's own twin as the woman (D4)."""
+    from .pools import PoolSetup
+
+    men = tuple(t for t in POOL if t.alias != WOMAN)
+    personas = {t.alias: PERSONAS[t.alias] for t in men} | {alias: persona}
+    return PoolSetup((Twin(alias, "f"), *men), personas, alias, MEN, None, ((alias, threshold),))
+
+
+def make_extraction_model():
+    """The Pro-tier model that builds twins (D4): EXTRACTION_MODEL if set, else Gemini Pro when a Gemini
+    key is set, else ILMU (development). None when no model is configured."""
+    from .llm import PRO, make_model
+
+    spec = os.environ.get("EXTRACTION_MODEL")
+    if not spec and os.environ.get("GEMINI_API_KEY"):
+        spec = f"gemini:{PRO}"
+    if not spec and os.environ.get("ILMU_API_KEY"):
+        spec = "ilmu:ilmu-mini-v3.3"
+    return (spec, make_model(spec)) if spec else None

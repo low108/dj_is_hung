@@ -77,7 +77,7 @@ class Slow(ScriptedModel):
 def test_events_appear_while_the_simulation_is_still_running(monkeypatch):
     import garden.demo as demo
 
-    monkeypatch.setattr(demo, "make_twin_model", lambda spec, personas=None, fake_scenario="breakout": Slow())
+    monkeypatch.setattr(demo, "make_twin_model", lambda spec, *args, **kw: Slow())
     client = TestClient(create_app(MemoryStore()))
     started = client.post("/simulations", json={"background": True, "max_days": 10, "seeds": [0]}).json()
     sim_id, seen_while_running, status, events = started["id"], False, "running", []

@@ -88,7 +88,7 @@ def test_a_run_that_errors_does_not_stop_the_others_being_saved(tmp_path, monkey
     import garden.demo as demo
     from garden import ScriptedModel
 
-    def flaky(spec, personas=None, fake_scenario="breakout"):
+    def flaky(spec, *args, **kw):
         if spec.run_id == "r01":
             raise RuntimeError("quota")
         return ScriptedModel({})
