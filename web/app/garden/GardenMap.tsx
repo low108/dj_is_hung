@@ -15,6 +15,9 @@ export type MapEvent = {
   announcement: string | null;
 };
 
+/** Where playback is: the day and seq of the last event played; caughtUp when the queue is empty. */
+export type Progress = { day: number; seq: number; caughtUp: boolean };
+
 const BUBBLE_MS = 2600; // how long a line of speech stays above a twin
 
 type Sprite = {
@@ -27,9 +30,6 @@ type Sprite = {
 };
 
 const STEP_MS = 90; // per tile while walking, at 1×
-
-/** Where playback is: the day and seq of the last event played; caughtUp when the queue is empty. */
-export type Progress = { day: number; seq: number; caughtUp: boolean };
 const COLORS = [0xd1495b, 0x2e86ab, 0xf18f01, 0x6a4c93, 0x3d8361, 0x8d6346, 0x247ba0, 0xb5838d];
 
 /** The Garden drawn with Phaser. Plays feed events in order through a queue, walking each twin to
@@ -65,7 +65,7 @@ export default function GardenMap({
   onAnnouncementRef.current = onAnnouncement;
   const onProgressRef = useRef(onProgress);
   onProgressRef.current = onProgress;
-  const played = useRef({ day: 0, seq: -1 });
+  const lastPlayed = useRef({ day: 0, seq: -1 });
   const sceneRef = useRef<Phaser.Scene | null>(null);
   const pausedRef = useRef(paused);
   const speedRef = useRef(speed);
@@ -168,8 +168,8 @@ export default function GardenMap({
         if (busy || cancelled || pausedRef.current) return;
         // Announcements become toasts at this point in playback; anything else not drawable is skipped.
         const reached = (e: MapEvent) => {
-          played.current = { day: e.day, seq: e.seq };
-          onProgressRef.current?.({ ...played.current, caughtUp: false });
+          lastPlayed.current = { day: e.day, seq: e.seq };
+          onProgressRef.current?.({ ...lastPlayed.current, caughtUp: false });
         };
         let next = queue.current.shift();
         while (next && !(next.twin && sprites.has(next.twin) && isPlace(next.place))) {
@@ -178,7 +178,7 @@ export default function GardenMap({
           next = queue.current.shift();
         }
         if (!next || !next.twin || !isPlace(next.place)) {
-          onProgressRef.current?.({ ...played.current, caughtUp: true });
+          onProgressRef.current?.({ ...lastPlayed.current, caughtUp: true });
           return;
         }
         reached(next);

@@ -82,3 +82,32 @@ def test_without_a_replay_dir_nothing_is_saved_or_listed(tmp_path):
     simulate(client)
     assert client.get("/replays").json() == []
     assert not list(tmp_path.iterdir())
+
+
+def test_a_run_that_errors_does_not_stop_the_others_being_saved(tmp_path, monkeypatch):
+    import garden.demo as demo
+    from garden import ScriptedModel
+
+    def flaky(spec, personas=None, fake_scenario="breakout"):
+        if spec.run_id == "r01":
+            raise RuntimeError("quota")
+        return ScriptedModel({})
+
+    monkeypatch.setattr(demo, "make_twin_model", flaky)
+    sim = simulate(app(tmp_path), seeds=[0, 1])
+    saved = {r["run_id"] for r in replay.list_replays(tmp_path)}
+    assert "r01" not in saved and saved == {r["run_id"] for r in sim["runs"]} - {"r01"}
+
+
+def test_a_damaged_replay_is_404_not_a_crash(tmp_path):
+    client = app(tmp_path)
+    sim = simulate(client)
+    (tmp_path / sim["id"] / f"{sim['featured_run']}.json").write_text('{"half": ')
+    assert client.get(f"/replays/{sim['id']}/{sim['featured_run']}").status_code == 404
+
+
+def test_runs_are_listed_in_plan_order_past_r99(tmp_path):
+    for run_id in ("r100", "r99", "r02"):
+        replay.save({k: None for k in replay.SUMMARY_FIELDS} | {"sim_id": "abc", "run_id": run_id,
+                                                                "created_at": "2026"}, tmp_path)
+    assert [r["run_id"] for r in replay.list_replays(tmp_path)] == ["r02", "r99", "r100"]

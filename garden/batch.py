@@ -69,20 +69,10 @@ def featured_spec(specs: list[RunSpec]) -> RunSpec | None:
 
 @dataclass(frozen=True)
 class Observer:
-    """What listens to a run: the live viewer on the featured run, the replay recorder on every run."""
+    """What listens to a run as it happens (the replay recorder, which also feeds the live viewer)."""
 
     on_feed: FeedHook | None = None
     on_state: StateHook | None = None
-
-    def __add__(self, other: Observer) -> Observer:
-        """Both observers hear everything, self first."""
-        return Observer(_both(self.on_feed, other.on_feed), _both(self.on_state, other.on_state))
-
-
-def _both(a, b):
-    if a is None or b is None:
-        return a or b
-    return lambda *args: (a(*args), b(*args))
 
 
 def run_one(spec: RunSpec, twins: tuple[Twin, ...], make_model: Callable[[RunSpec], Model],
@@ -100,12 +90,16 @@ def run_one(spec: RunSpec, twins: tuple[Twin, ...], make_model: Callable[[RunSpe
 
 def run_simulation(specs: list[RunSpec], twins: tuple[Twin, ...], make_model: Callable[[RunSpec], Model],
                    parallelism: int = 12, observe: Callable[[RunSpec], Observer | None] | None = None,
-                   **config) -> Simulation:
-    """`observe(spec)` gives the Observer for each run (or None), e.g. live streaming for featured_spec."""
+                   on_finished: Callable[[RunRecord], None] | None = None, **config) -> Simulation:
+    """`observe(spec)` gives each run's Observer (or None); `on_finished(record)` is called as each run
+    ends, on that run's thread, so its replay is saved even if a later run never finishes."""
     start = time.perf_counter()
 
     def go(spec: RunSpec) -> RunRecord:
-        return run_one(spec, twins, make_model, observe(spec) if observe else None, **config)
+        record = run_one(spec, twins, make_model, observe(spec) if observe else None, **config)
+        if on_finished:
+            on_finished(record)
+        return record
 
     with ThreadPoolExecutor(max_workers=max(1, parallelism)) as pool:
         records = list(pool.map(go, specs))

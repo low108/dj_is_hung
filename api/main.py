@@ -1,10 +1,10 @@
 """HTTP API: start a simulation and read its result."""
 from __future__ import annotations
 
+import logging
 import os
 import threading
 import uuid
-from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
@@ -13,14 +13,16 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from garden import demo, feed, replay
+from garden import demo, replay
 from garden import pools as pool_lib
 from garden import speed_dating as sd
-from garden.batch import Observer, PriceLevel, RunSpec, Simulation, featured_spec, plan, run_simulation
+from garden.batch import PriceLevel, Simulation, featured_spec, plan, run_simulation
 from garden.runlog import write_simulation
 from garden.scoring import score
 
 from .store import SimulationStore, default_store
+
+log = logging.getLogger(__name__)
 
 
 class StartSimulation(BaseModel):
@@ -37,13 +39,8 @@ class StartSimulation(BaseModel):
 
 def serialize(result) -> dict:
     return {
-        "outcome": result.outcome.value,
-        "day": result.day,
-        "pair": list(result.pair) if result.pair else None,
-        "unrequited": [{"day": a.day, "twin": a.twin, "target": a.target} for a in result.unrequited],
+        **replay.outcome_fields(result),
         "scorable": result.scorable,
-        "breach": ({"day": result.breach.day, "twin": result.breach.twin, "phrase": result.breach.phrase,
-                    "text": result.breach.text} if result.breach else None),
         "standing": result.standing,
         "longing": {who: {n: round(v, 2) for n, v in d.items()} for who, d in result.longing.items()},
         "announcements": [{"day": a.day, "text": a.text} for a in result.announcements],
@@ -135,28 +132,29 @@ def create_app(store: SimulationStore | None = None, log_runs: bool = False,
         app.state.store.save(sim_id, record)
         store = app.state.store
 
-        recorders = {spec.run_id: replay.Recorder(spec) for spec in specs}
+        info = replay.SimulationInfo(sim_id, record["twins"],
+                                     scenario=req.scenario if all(demo.is_fake(m) for m in req.models) else None,
+                                     featured_run=record["featured_run"], created_at=record["created_at"])
 
-        def observe(spec: RunSpec) -> Observer:
-            observer = recorders[spec.run_id].observer
-            if featured and spec.run_id == featured.run_id:  # the featured run also streams live
-                cursor = feed.FeedCursor(spec.run_id)
-                observer += Observer(
-                    on_feed=lambda item, word: store.add_events(sim_id, [cursor(item, word).to_dict()]),
-                    on_state=lambda states: store.save_twin_states(sim_id, [asdict(s) for s in states]))
-            return observer
+        def stream(events: list[dict], states: list[dict]) -> None:
+            if events:
+                store.add_events(sim_id, events)
+            if states:
+                store.save_twin_states(sim_id, states)
 
-        def save_replays(sim: Simulation) -> None:
+        recorders = {spec.run_id: replay.Recorder(spec, live=stream if spec.run_id == info.featured_run else None)
+                     for spec in specs}
+
+        def save_replay(rec) -> None:
             if app.state.replay_dir is None:
                 return
-            fake = all(m.startswith("fake:") for m in req.models)
-            for rec in sim.records:
-                one = replay.replay_of(sim_id, rec, recorders[rec.spec.run_id], record["twins"],
-                                       scenario=req.scenario if fake else None,
-                                       featured=bool(featured and rec.spec.run_id == featured.run_id),
-                                       created_at=record["created_at"])
-                if one is not None:
-                    replay.save(one, app.state.replay_dir)
+            saved = replay.replay_of(info, rec, recorders[rec.spec.run_id])
+            if saved is None:
+                return
+            try:
+                replay.save(saved, app.state.replay_dir)
+            except OSError as e:  # a replay that can't be written must not sink the simulation
+                log.warning("could not save replay %s/%s: %s", sim_id, rec.spec.run_id, e)
 
         def run() -> dict:
             try:
@@ -172,8 +170,8 @@ def create_app(store: SimulationStore | None = None, log_runs: bool = False,
             # Runs fan out on local threads for now; A3 moves the same RunSpecs to Cloud Run Job tasks.
             sim = run_simulation(specs, twins,
                                  lambda spec: demo.make_twin_model(spec, personas, fake_scenario=req.scenario),
-                                 observe=observe, max_days=req.max_days)
-            save_replays(sim)
+                                 observe=lambda spec: recorders[spec.run_id].observer,
+                                 on_finished=save_replay, max_days=req.max_days)
             done = record | {"status": "done", "pool_iid": req.pool_iid,
                              **serialize_simulation(sim, woman, men, matched)}
             if app.state.log_runs:
@@ -213,7 +211,7 @@ def create_app(store: SimulationStore | None = None, log_runs: bool = False,
         if app.state.replay_dir is None:
             raise HTTPException(404, "replays are not saved by this server")
         try:
-            return replay.load(sim_id, run_id, app.state.replay_dir)
+            return replay.load(replay.ReplayId(sim_id, run_id), app.state.replay_dir)
         except KeyError as e:
             raise HTTPException(404, str(e)) from e
 

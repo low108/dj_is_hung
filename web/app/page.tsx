@@ -70,10 +70,19 @@ type ReplaySummary = {
 type Replay = ReplaySummary & Outcome & { twins: string[]; events: FeedEvent[]; twin_states: TwinState[] };
 
 const replayKey = (r: { sim_id: string; run_id: string }) => `${r.sim_id}/${r.run_id}`;
+const modelName = (model: string) => model.split(":")[1] ?? model;
+
+/** The run picker's filters: model × price level × scenario ("" = any). */
+type ReplayFilter = { model: string; price: string; scenario: string };
+const ANY: ReplayFilter = { model: "", price: "", scenario: "" };
+const scenarioOf = (r: ReplaySummary) => r.scenario ?? "live";
+const matches = (r: ReplaySummary, f: ReplayFilter) =>
+  (!f.model || r.model === f.model) && (!f.price || r.price === f.price) && (!f.scenario || scenarioOf(r) === f.scenario);
+const distinct = (values: string[]) => [...new Set(values)].sort();
 
 function replayLabel(r: ReplaySummary): string {
   const when = new Date(r.created_at).toLocaleString([], { dateStyle: "short", timeStyle: "short" });
-  const model = r.model.startsWith("fake:") ? `scripted (${r.scenario ?? "?"})` : r.model.split(":")[1] ?? r.model;
+  const model = r.scenario ? `scripted (${r.scenario})` : modelName(r.model);
   const mark = r.outcome === "breakout" ? "★ breakout" : r.outcome;
   return `${when} · ${model} · ${r.price} price · seed ${r.seed} · ${mark} day ${r.day}`;
 }
@@ -138,6 +147,8 @@ export default function Home() {
   const [progress, setProgress] = useState<Progress>(START);
   const [replays, setReplays] = useState<ReplaySummary[]>([]);
   const [picked, setPicked] = useState("");
+  const [filter, setFilter] = useState<ReplayFilter>(ANY);
+  const replayRequest = useRef(0); // only the latest replay request may fill the view
   const [replaying, setReplaying] = useState<Replay | null>(null);
   const [viewKey, setViewKey] = useState("none"); // a fresh map per simulation or replay
   const [speed, setSpeed] = useState(1);
@@ -163,13 +174,25 @@ export default function Home() {
   }
   useEffect(() => clearToasts, []);
 
+  function dismissLater(seq: number) {
+    toastTimers.current.push(
+      window.setTimeout(() => setToasts((old) => old.filter((t) => t.seq !== seq)), TOAST_MS / speed),
+    );
+  }
+
   function toast(event: { seq: number; announcement: string | null }) {
     if (!event.announcement) return;
     const item = { seq: event.seq, text: event.announcement };
     setToasts((old) => [...old, item].slice(-3));
-    toastTimers.current.push(
-      window.setTimeout(() => setToasts((old) => old.filter((t) => t.seq !== item.seq)), TOAST_MS / speed),
-    );
+    dismissLater(item.seq);
+  }
+
+  // Toasts wait while playback is paused, then get a fresh few seconds.
+  function togglePause() {
+    toastTimers.current.forEach((t) => window.clearTimeout(t));
+    toastTimers.current = [];
+    if (paused) toasts.forEach((t) => dismissLater(t.seq));
+    setPaused(!paused);
   }
 
   // The panel follows the map, not the API: the last evening before the day the map is playing
@@ -225,11 +248,13 @@ export default function Home() {
   /** Plays a saved run from its stored events: nothing is simulated and no model is called. */
   async function playReplay(key: string) {
     if (!key) return;
+    const request = ++replayRequest.current;
     resetView();
     try {
       const res = await fetch(`${API_URL}/replays/${key}`);
       if (!res.ok) throw new Error(`API returned ${res.status} for replay ${key}`);
       const r: Replay = await res.json();
+      if (request !== replayRequest.current) return; // a newer pick or a live run took over
       setReplaying(r);
       setFeaturedRun(r.run_id);
       setTwinNames(r.twins);
@@ -250,6 +275,7 @@ export default function Home() {
   }
 
   async function start() {
+    replayRequest.current++; // drop any replay still loading
     setBusy(true);
     resetView();
     try {
@@ -279,7 +305,10 @@ export default function Home() {
   }
 
   const notable = sim?.result?.events.filter((e) => e.rung !== "talk") ?? [];
-  const played = feedEvents.filter((e) => e.seq <= progress.seq); // the feed follows the map
+  const playedEvents = feedEvents.filter((e) => e.seq <= progress.seq); // the feed follows the map
+  // Results wait for the map to finish playing (if there's no map, there's nothing to wait for).
+  const playedOut = progress.caughtUp || twinNames.length === 0;
+  const shown = replays.filter((r) => matches(r, filter));
 
   return (
     <main className="page">
@@ -321,11 +350,37 @@ export default function Home() {
       </div>
 
       <div className="controls replays">
+        {(
+          [
+            ["model", "Model", distinct(replays.map((r) => r.model)), modelName],
+            ["price", "Price", distinct(replays.map((r) => r.price)), (v: string) => `${v} price`],
+            ["scenario", "Scenario", distinct(replays.map(scenarioOf)), (v: string) => v],
+          ] as const
+        ).map(([key, label, options, show]) => (
+          <label key={key}>
+            {label}{" "}
+            <select
+              value={filter[key]}
+              onChange={(e) => {
+                setFilter({ ...filter, [key]: e.target.value });
+                setPicked("");
+              }}
+              aria-label={`Filter by ${label.toLowerCase()}`}
+            >
+              <option value="">Any</option>
+              {options.map((v) => (
+                <option key={v} value={v}>
+                  {show(v)}
+                </option>
+              ))}
+            </select>
+          </label>
+        ))}
         <label>
           Saved runs{" "}
           <select value={picked} onChange={(e) => setPicked(e.target.value)} aria-label="Saved runs" disabled={busy}>
-            <option value="">{replays.length ? "Pick a run to replay" : "No saved runs yet"}</option>
-            {replays.map((r) => (
+            <option value="">{shown.length ? `Pick one of ${shown.length} runs` : "No saved runs yet"}</option>
+            {shown.map((r) => (
               <option key={replayKey(r)} value={replayKey(r)}>
                 {replayLabel(r)}
               </option>
@@ -369,7 +424,7 @@ export default function Home() {
             </div>
           </div>
           <div className="playback" role="group" aria-label="Playback">
-            <button onClick={() => setPaused((p) => !p)} aria-pressed={paused}>
+            <button onClick={togglePause} aria-pressed={paused}>
               {paused ? "▶ Play" : "⏸ Pause"}
             </button>
             {SPEEDS.map((x) => (
@@ -387,14 +442,14 @@ export default function Home() {
         </section>
       )}
 
-      {played.length > 0 && (
+      {playedEvents.length > 0 && (
         <section className="result feed" data-testid="feed">
           <h2>
             {replaying ? "Replay" : busy ? "Live" : "Finished"}: the Garden, run {featuredRun}
             {simId && ` (simulation ${simId})`}
           </h2>
           <ol>
-            {played.map((e) => (
+            {playedEvents.map((e) => (
               <li key={e.seq} className={e.twin ? "" : "announcement"}>
                 {e.emoji} {e.line}
                 {e.say ? ` “${e.say}”` : ""}
@@ -404,7 +459,7 @@ export default function Home() {
         </section>
       )}
 
-      {replaying && progress.caughtUp && (
+      {replaying && playedOut && (
         <section className="result" data-testid="result">
           <h2>{headline(replaying)}</h2>
           <p className="meta">
@@ -414,7 +469,7 @@ export default function Home() {
         </section>
       )}
 
-      {sim && progress.caughtUp && (
+      {sim && playedOut && (
         <section className="result" data-testid="result">
           <h2>{headline(sim.result)}</h2>
           {notable.length > 0 && (
