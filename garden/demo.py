@@ -1,6 +1,8 @@
 """Placeholder demo pool until D2 loads real speed-dating pools, and the per-run model factory."""
 from __future__ import annotations
 
+import os
+
 from .batch import RunSpec
 from .engine_types import Twin
 from .fake_model import scenario
@@ -33,3 +35,15 @@ def make_twin_model(spec: RunSpec, personas: dict[str, str] = PERSONAS, fake_sce
     from .llm import make_model
 
     return ConcordiaTwins(make_model(spec.model), personas)
+
+
+def make_highlight_model(models: list[str]):
+    """The model that captions highlights (C3): HIGHLIGHT_MODEL if set, else Gemini Flash when a Gemini
+    key is set, else the simulation's first real model. None for an all-scripted simulation: highlights
+    then use template captions, so scripted runs never make API calls."""
+    if all(is_fake(m) for m in models):
+        return None
+    from .llm import FLASH, make_model
+
+    default = f"gemini:{FLASH}" if os.environ.get("GEMINI_API_KEY") else next(m for m in models if not is_fake(m))
+    return make_model(os.environ.get("HIGHLIGHT_MODEL") or default)

@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from garden import demo, replay
+from garden import demo, highlights, replay
 from garden import pools as pool_lib
 from garden import speed_dating as sd
 from garden.batch import PriceLevel, Simulation, featured_spec, plan, run_simulation
@@ -56,10 +56,11 @@ def serialize(result) -> dict:
     }
 
 
-def serialize_simulation(sim: Simulation, woman: str = demo.WOMAN, men: list[str] | None = None,
-                         matched: frozenset[str] | None = None) -> dict:
-    men = demo.MEN if men is None else men
+def serialize_simulation(sim: Simulation, pool: pool_lib.PoolSetup, highlight_model=None) -> dict:
+    """`highlight_model` captions the top candidates' highlights (None: template captions)."""
+    woman, men, matched = pool.woman, pool.men, pool.matched
     scores = score(list(sim.records), woman, men)
+    picked = highlights.for_simulation(list(sim.records), scores, woman, pool.personas, highlight_model)
     runs = [{"run_id": r.spec.run_id, "model": r.spec.model, "price": r.spec.price.value, "seed": r.spec.seed,
              "wall_seconds": round(r.wall_seconds, 2), "error": r.error,
              "result": serialize(r.result) if r.result else None} for r in sim.records]
@@ -75,6 +76,7 @@ def serialize_simulation(sim: Simulation, woman: str = demo.WOMAN, men: list[str
                       "pairs_in_order": check.pairs_in_order}
     return {"wall_seconds": round(sim.wall_seconds, 2), "runs": runs, "ranking": ranking,
             "scored_runs": len(sim.scorable), "woman": woman, "answer_key": answer_key,
+            "highlights": [h.to_dict() for h in picked],
             "result": runs[0]["result"] if runs else None}  # first run kept for the single-result page
 
 
@@ -166,6 +168,13 @@ def create_app(store: SimulationStore | None = None, log_runs: bool = False,
                     raise
                 return failed
 
+        def highlight_model():
+            try:
+                return demo.make_highlight_model(req.models)
+            except (KeyError, ValueError) as e:  # e.g. no API key: template captions instead of no results
+                log.warning("highlights use template captions: %s", e)
+                return None
+
         def finish() -> dict:
             # Runs fan out on local threads for now; A3 moves the same RunSpecs to Cloud Run Job tasks.
             sim = run_simulation(specs, twins,
@@ -173,7 +182,7 @@ def create_app(store: SimulationStore | None = None, log_runs: bool = False,
                                  observe=lambda spec: recorders[spec.run_id].observer,
                                  on_finished=save_replay, max_days=req.max_days)
             done = record | {"status": "done", "pool_iid": req.pool_iid,
-                             **serialize_simulation(sim, woman, men, matched)}
+                             **serialize_simulation(sim, pool, highlight_model())}
             if app.state.log_runs:
                 done["log_dir"] = str(write_simulation(sim_id, sim, woman, men))
             store.save(sim_id, done)
