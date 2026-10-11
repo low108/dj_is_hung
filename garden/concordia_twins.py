@@ -8,6 +8,7 @@ from concordia.typing import entity as entity_lib
 
 import re
 
+from . import immersion
 from .engine_types import Action, Event, Reflection, Rung, Situation, Twin
 from .verdict import GATED_RUNGS
 from .llm import hash_embedder
@@ -16,6 +17,7 @@ from .world_text import (ASK_ACTION, ASK_SPEECH, ASK_TARGET, NEEDS_TARGET, OBSER
                          STANDING_MEMORIES)
 
 _OPTION_TO_RUNG = {text: Rung(key) for key, text in RUNG_OPTIONS.items()}
+RESAMPLES = 2  # extra attempts for a line or reflection that breaks immersion
 
 
 def offered_options(situation: Situation | None) -> tuple[str, ...]:
@@ -52,6 +54,7 @@ class ConcordiaTwins:
         self._personas = personas or {}
         self._agents: dict[str, object] = {}
         self._standing_in_play: dict[str, bool] = {}
+        self.resamples = 0  # lines/reflections re-asked because they broke immersion
 
     def _agent(self, twin: Twin, standing_in_play: bool = True):
         if twin.alias not in self._agents:
@@ -96,11 +99,22 @@ class ConcordiaTwins:
 
         say = ""
         if rung.value in SPEAKS and target:
-            say = _clean_speech(twin.alias, agent.act(entity_lib.ActionSpec(
-                call_to_action=ASK_SPEECH.format(target=target),
-                output_type=entity_lib.OutputType.FREE,
-            )))
+            spec = entity_lib.ActionSpec(call_to_action=ASK_SPEECH.format(target=target),
+                                         output_type=entity_lib.OutputType.FREE)
+            say = self._immersive(lambda: _clean_speech(twin.alias, agent.act(spec)), lambda line: line)
         return Action(rung, target, say)
+
+    def _immersive(self, sample, text_of):
+        """Sample, and re-ask up to RESAMPLES times while the text breaks immersion. A one-off glitch
+        (a model refusing the roleplay, "this experiment") shouldn't throw away a whole run; a twin that
+        keeps breaking immersion still reaches the engine, which then excludes the run."""
+        result = sample()
+        for _ in range(RESAMPLES):
+            if not immersion.breaking_phrase(text_of(result)):
+                break
+            self.resamples += 1
+            result = sample()
+        return result
 
     def after_day(self, day: int, events: list[Event]) -> list[Reflection]:
         """Deliver what each twin could have seen or heard today (wall decisions stay private),
@@ -111,13 +125,13 @@ class ConcordiaTwins:
 
         reflections = []
         for alias, agent in self._agents.items():
-            raw = agent.act(entity_lib.ActionSpec(
+            spec = entity_lib.ActionSpec(
                 call_to_action=REFLECTION_PROMPT.format(
                     day=day, ratings=RATINGS_WITH_STANDING if self._standing_in_play.get(alias, True)
                     else RATINGS_WITHOUT_STANDING),
                 output_type=entity_lib.OutputType.FREE,
-            ))
-            text, ratings = parse_reflection(alias, raw)
+            )
+            text, ratings = self._immersive(lambda: parse_reflection(alias, agent.act(spec)), lambda r: r[0])
             if text:
                 agent.observe(OBSERVE_REFLECTION.format(day=day, text=text))
             reflections.append(Reflection(day, alias, text, ratings))

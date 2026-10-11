@@ -51,6 +51,7 @@ class StepResult:
     gate_permitted: float    # share of twin-days the gate allowed rule-breaking
     excluded: int
     errors: int
+    resamples: int = 0       # immersion-breaking lines re-asked (B8)
 
     @property
     def breakout_rate(self) -> float:
@@ -62,7 +63,8 @@ class StepResult:
     def describe(self) -> str:
         return (f"{self.index} {self.step:22s} runs {self.runs:2d}  breakouts {self.breakouts}/{self.scorable} "
                 f"({self.breakout_rate:.0%})  unrequited {self.unrequited:2d}  gated actions {self.gated_actions:3d}  "
-                f"gate permitted {self.gate_permitted:.0%}  excluded {self.excluded}  errors {self.errors}")
+                f"gate permitted {self.gate_permitted:.0%}  excluded {self.excluded}  resampled {self.resamples}  "
+                f"errors {self.errors}")
 
 
 def summarise(step: Step, sim: Simulation) -> StepResult:
@@ -77,6 +79,7 @@ def summarise(step: Step, sim: Simulation) -> StepResult:
         gate_permitted=round(sum(v.permitted for v in verdicts) / len(verdicts), 3) if verdicts else 0.0,
         excluded=len(results) - len(scorable),
         errors=sum(1 for r in sim.records if r.result is None),
+        resamples=sum(r.resamples for r in results),
     )
 
 

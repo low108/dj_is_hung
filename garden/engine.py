@@ -55,6 +55,7 @@ class RunResult:
     announcements: list[Announcement] = field(default_factory=list)  # Coordinator, for the viewer
     verdicts: list[Verdict] = field(default_factory=list)  # one per twin per day
     breach: Breach | None = None  # set when the run was excluded
+    resamples: int = 0  # lines/reflections the model re-asked because they broke immersion
 
     @property
     def scorable(self) -> bool:
@@ -82,7 +83,7 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
         return RunResult(outcome=outcome, day=day, pair=pair, unrequited=unrequited, events=events,
                          standing=standing, longing={t.alias: longing.of(t.alias) for t in config.twins},
                          reflections=reflections, announcements=coordinator.announcements,
-                         verdicts=verdicts, breach=breach)
+                         verdicts=verdicts, breach=breach, resamples=getattr(model, "resamples", 0))
 
     def find_breach(day: int, writings: list[tuple[str, str]]) -> Breach | None:
         for twin, text in writings:
