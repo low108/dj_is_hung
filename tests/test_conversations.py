@@ -65,8 +65,10 @@ def test_checking_the_device_on_a_date_is_a_rule_break_and_re_rolls_the_date():
 
 def test_speech_answers_the_other_and_shares_something_real():
     replying = Situation(replying_to=("Ren", "I fix bicycles."))
-    assert ask_speech(TALK, "Ren", replying).startswith("What does {name} say to Ren? Answer what Ren just said")
-    assert "Say something true about yourself" in ask_speech(TALK, "Ren", Situation())
+    reply = ask_speech(TALK, "Ren", replying)
+    assert reply.startswith("What does {name} say to Ren? Answer what Ren just said in {name}'s own words")
+    assert "Don't repeat Ren's words" in reply and "don't take Ren's facts as {name}'s" in reply
+    assert "Say something true about {name}'s own life" in ask_speech(TALK, "Ren", Situation())
     assert ask_speech(Rung.PROPOSE_LEAVING, "Ren", replying).endswith("One short line of dialogue only.")
 
 
@@ -191,3 +193,38 @@ def test_only_twins_who_took_part_today_reflect():
     result = run_world(WorldConfig(world, max_days=2, seed=1), twins)
     on_date = {e.twin for e in result.events if e.day == 1}
     assert {r.twin for r in result.reflections if r.day == 1} == on_date and len(on_date) == 2
+
+
+def test_a_line_that_copies_the_one_it_answers_is_an_echo():
+    from garden.concordia_twins import echoes
+
+    heard = "Three days feels so short when you really get to know someone, doesn't it?"
+    assert echoes("Three days feels short when you really get to know someone, doesn't it?", [heard])
+    assert not echoes("It does. What made you come to the Garden?", [heard])
+
+
+def test_the_last_draft_is_the_line():
+    raw = ('Felix Three days feels short. I study Law." Actually, let me make it more natural and just one or '
+           'two sentences: "Sincerity matters to me too. I love theater."')
+    assert _clean_speech("Felix", raw) == "Sincerity matters to me too. I love theater."
+
+
+def test_an_echo_or_an_empty_line_is_asked_again():
+    class Parrot(KeywordModel):
+        """Says 'Same line.' until asked again, then something of its own."""
+
+        def __init__(self):
+            super().__init__({}, say="A quiet day.\nRatings: longing=5")
+            self.lines = 0
+
+        def sample_text(self, prompt, **kw):
+            if "writes privately" in prompt[-800:]:  # the evening reflection
+                return self.say
+            self.lines += 1
+            return "Same line." if self.lines <= 2 else f"Something new number {self.lines}."
+
+    twins = ConcordiaTwins(CountingModel(Parrot(), letter_choices=False))
+    result = run_world(WorldConfig((MARA, REN), max_days=1, seed=1), twins)
+    said = [e.say for e in result.events if e.say]
+    assert said[0] == "Same line." and said[1] != "Same line."  # the second twin's echo was asked again
+    assert [r.phrase for r in twins.redos][:1] == ["echo"]

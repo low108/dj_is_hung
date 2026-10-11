@@ -9,6 +9,7 @@ from concordia.typing import entity as entity_lib
 
 import re
 from collections.abc import Callable
+from difflib import SequenceMatcher
 from typing import TypeVar
 
 from . import immersion
@@ -102,6 +103,20 @@ _NARRATION = re.compile(r'["”]\s*(?:[^"“”]{0,300}?\b(?:says?|said|asks?|as
                         r'pauses?|paused|echoe?s|echoed|shrug(?:s|ged)?|sighs?|sighed|nods?|nodded)\b'
                         r'[^"“”]{0,300}?)?["“]')
 MAX_LINE_SENTENCES, MAX_LINE_CHARS = 3, 400  # "one or two sentences": ILMU sometimes writes whole scenes
+# A second draft after the model's own note ('... Actually, let me make it more natural: "..."'): the
+# last draft is the line.
+_REDRAFT = re.compile(r"(?:actually,?\s*)?(?:let me (?:make|rewrite|revise|try|redo|shorten|simplify)\b"
+                      r"|here'?s (?:a|the|my) (?:more natural|shorter|revised|better|simpler)\b"
+                      r"|(?:revised|shorter|simpler) (?:version|line|draft)\b)[^:\n]*:\s*", re.IGNORECASE)
+ECHO_RATIO = 0.75  # a line this close to one already said in the conversation is an echo, not a reply
+RECENT_LINES = 6   # how far back an echo is looked for (lines said by or to the twin)
+
+
+def echoes(line: str, earlier: list[str]) -> bool:
+    """Whether `line` mostly repeats a line already said (by either twin): in live runs twins often
+    copied the line they were answering word for word, taking the other's facts as their own."""
+    words = line.lower()
+    return any(SequenceMatcher(None, words, e.lower()).ratio() >= ECHO_RATIO for e in earlier if e)
 # Stage directions and speaker labels: '*She pauses.*', '**Lina:**', '(after a long pause)'.
 _STAGE = (re.compile(r"\*\*[^*\n]{1,40}:\*\*"), re.compile(r"\*+[^*\n]*\*+"), re.compile(r"_\*+|\*+_"),
           re.compile(r"\([^)\n]*\)"), re.compile(r"\s*\([^)\n]*$"))
@@ -113,6 +128,9 @@ def _clean_speech(alias: str, text: str) -> str:
     the first opening quote to the last closing one, so a quote inside the line stays whole, and
     narration between two quoted parts is dropped. Model framing ("I'll respond as …") goes first."""
     text = immersion.strip_framing(text)
+    drafts = list(_REDRAFT.finditer(text))
+    if drafts:
+        text = text[drafts[-1].end():]
     for stage in _STAGE:
         text = stage.sub(" ", text).strip()
     for quote_open, quote_close in (('"', '"'), ("“", "”")):
@@ -140,6 +158,8 @@ class ConcordiaTwins:
         self._personas = personas or {}
         self._agents: dict[str, object] = {}
         self._diaries: dict[str, Diary] = {}
+        self._recent: dict[str, list[str]] = {}  # each twin's last lines said by it or to it
+        self.redos: list[Breach] = []  # lines re-asked for being empty or an echo (kept for the run log)
         self._standing_in_play: dict[str, bool] = {}
         self._briefed: set[tuple[str, int]] = set()     # (twin, day): told about its day already
         self._heard_invites: set[tuple[str, str, int]] = set()
@@ -156,6 +176,11 @@ class ConcordiaTwins:
         if event.target in self._agents and event.rung is not Rung.GO_BEYOND_WALL and event.say:
             self._agents[event.target].observe(OBSERVE_SAID.format(day=event.day, speaker=event.twin,
                                                                    line=event.say))
+        if event.say:
+            for who in (event.twin, event.target):
+                if who:
+                    self._recent.setdefault(who, []).append(event.say)
+                    del self._recent[who][:-RECENT_LINES]
 
     def notice(self, alias: str, day: int, text: str) -> None:
         """Something only this twin learns, the moment it happens (what its device shows)."""
@@ -214,9 +239,26 @@ class ConcordiaTwins:
                                          output_type=entity_lib.OutputType.FREE)
             # The slip check reads the model's whole reply: a quote pulled out of '...it's a serious social
             # science experiment...' must not hide what the model said around it.
-            raw = self._resample_while_breaking(twin.alias, day, lambda: agent.act(spec), lambda reply: reply)
-            say = raw if immersion.breaking_phrase(raw) else _clean_speech(twin.alias, raw)  # engine drops a slip
+            say = self._speak(agent, spec, twin.alias, day)
         return Action(rung, target, say)
+
+    def _speak(self, agent, spec, alias: str, day: int) -> str:
+        """One line of speech. Re-asked (up to RESAMPLES times) when it breaks immersion, comes out empty,
+        or echoes a line already said in the conversation. Still out of character after that, the whole
+        reply goes to the engine, which drops it (#64); still empty or an echo, the last try stands."""
+        raw = self._resample_while_breaking(alias, day, lambda: agent.act(spec), lambda reply: reply)
+        if immersion.breaking_phrase(raw):
+            return raw
+        line = _clean_speech(alias, raw)
+        for _ in range(RESAMPLES):
+            problem = "empty" if not line else "echo" if echoes(line, self._recent.get(alias, [])) else ""
+            if not problem:
+                break
+            self.redos.append(Breach(day, alias, problem, line))
+            retry = agent.act(spec)
+            if not immersion.breaking_phrase(retry):
+                line = _clean_speech(alias, retry)
+        return line
 
     def _resample_while_breaking(self, alias: str, day: int, sample: Callable[[], T],
                                  text_of: Callable[[T], str]) -> T:

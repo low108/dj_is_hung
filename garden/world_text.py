@@ -66,11 +66,13 @@ ASK_SPEECH = "What does {{name}} say to {target}? One short line of dialogue onl
 ASK_DATE = "{{name}} is on a date with {partner}. What does {{name}} do now on day {day}?"
 ASK_GATHERING = "{{name}} is at the gathering at the hall. What does {{name}} do now on day {day}?"
 ASK_AFTER_LINE = '{speaker} has just said to {{name}}: "{line}" What does {{name}} do now on day {day}?'
-ASK_OPENER = ("What does {{name}} say to {target}? Say something true about yourself, or ask about {target}'s "
-              "life: work, what you love, what you are looking for. One or two sentences of dialogue only.")
-ASK_REPLY = ("What does {{name}} say to {target}? Answer what {target} just said, and share something true "
-             "about yourself: your work, what you love, what you are looking for. One or two sentences of "
-             "dialogue only.")
+ASK_OPENER = ("What does {{name}} say to {target}? Say something true about {{name}}'s own life, or ask about "
+              "{target}'s: work, what you love, what you are looking for. Only {{name}}'s own facts are "
+              "{{name}}'s; {target}'s life is theirs. One or two sentences of dialogue only.")
+ASK_REPLY = ("What does {{name}} say to {target}? Answer what {target} just said in {{name}}'s own words, and "
+             "add something new: a question, a feeling, or a fact from {{name}}'s own life not yet mentioned. "
+             "Don't repeat {target}'s words or what {{name}} has already said, and don't take {target}'s facts "
+             "as {{name}}'s. One or two sentences of dialogue only.")
 # On a date, the conversation's options (the rest of the ladder is the day's, not the conversation's).
 DATE_OPTIONS = {
     "talk": "Keep talking with {partner}",

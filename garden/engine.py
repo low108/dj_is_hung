@@ -61,6 +61,7 @@ class RunResult:
     breach: Breach | None = None  # the slip that flagged the run (see `flagged`)
     immersion_breaks: list[Breach] = field(default_factory=list)  # rejected and re-asked by the model
     slips: list[Breach] = field(default_factory=list)  # still out of character after re-asking: dropped (#64)
+    redos: list[Breach] = field(default_factory=list)  # lines re-asked for being empty or an echo
     dated: list[tuple[str, str]] = field(default_factory=list)  # every pair sent on at least one date
 
     def had_date(self, a: str, b: str) -> bool:
@@ -111,6 +112,7 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
                          standing=standing, longing={t.alias: longing.of(t.alias) for t in config.twins},
                          reflections=reflections, announcements=coordinator.announcements,
                          wall_opened=wall_opened, breach=repeated_slipper(), slips=slips,
+                         redos=list(getattr(model, "redos", [])),
                          immersion_breaks=list(getattr(model, "breaks", [])),
                          dated=sorted(tuple(sorted(p)) for p in coordinator.dates))
 
