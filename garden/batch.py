@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from itertools import product
 
-from .engine import Model, RunResult, WorldConfig, run_world
+from .engine import DayHook, Model, RunResult, WorldConfig, run_world
 from .engine_types import Twin
 
 
@@ -62,20 +62,29 @@ def plan(models: list[str], prices: list[PriceLevel], seeds: list[int]) -> list[
     return [RunSpec(f"r{i:02d}", m, p, s) for i, (m, p, s) in enumerate(product(models, prices, seeds))]
 
 
-def run_one(spec: RunSpec, twins: tuple[Twin, ...], make_model: Callable[[RunSpec], Model], **config) -> RunRecord:
+def run_one(spec: RunSpec, twins: tuple[Twin, ...], make_model: Callable[[RunSpec], Model],
+            on_day: DayHook | None = None, **config) -> RunRecord:
     """One run; extra keyword arguments go to WorldConfig (e.g. max_days, thresholds)."""
     start = time.perf_counter()
     try:
         world = WorldConfig(twins, seed=spec.seed, standing_start=spec.price.standing, **config)
-        result = run_world(world, make_model(spec))  # a fresh model per run: twins carry memories
+        result = run_world(world, make_model(spec), on_day)  # a fresh model per run: twins carry memories
         return RunRecord(spec, result, time.perf_counter() - start)
     except Exception as e:  # one failed run must not sink the simulation
         return RunRecord(spec, None, time.perf_counter() - start, f"{type(e).__name__}: {e}")
 
 
 def run_simulation(specs: list[RunSpec], twins: tuple[Twin, ...], make_model: Callable[[RunSpec], Model],
-                   parallelism: int = 12, **config) -> Simulation:
+                   parallelism: int = 12, featured: Callable[[RunSpec], DayHook] | None = None,
+                   **config) -> Simulation:
+    """`featured(spec)` gives the day hook for the featured run (the first spec), whose days stream live."""
     start = time.perf_counter()
+    first = specs[0].run_id if specs else None
+
+    def go(spec: RunSpec) -> RunRecord:
+        hook = featured(spec) if featured and spec.run_id == first else None
+        return run_one(spec, twins, make_model, hook, **config)
+
     with ThreadPoolExecutor(max_workers=max(1, parallelism)) as pool:
-        records = list(pool.map(lambda s: run_one(s, twins, make_model, **config), specs))
+        records = list(pool.map(go, specs))
     return Simulation(records, time.perf_counter() - start)

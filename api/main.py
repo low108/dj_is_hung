@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import threading
 import uuid
 from datetime import datetime, timezone
 from typing import Literal
@@ -14,7 +15,8 @@ from garden import demo
 from garden import pools as pool_lib
 from garden import speed_dating as sd
 from garden.runlog import write_simulation
-from garden.batch import PriceLevel, Simulation, plan, run_simulation
+from garden import feed
+from garden.batch import PriceLevel, RunSpec, Simulation, plan, run_simulation
 from garden.scoring import score
 
 from .store import SimulationStore, default_store
@@ -29,6 +31,7 @@ class StartSimulation(BaseModel):
     seeds: list[int] = [0, 1]
     max_days: int = 10
     pool_iid: int | None = None  # a real speed-dating woman (see GET /pools); None = placeholder demo pool
+    background: bool = False  # True: return at once and stream the featured run's events (the web app)
 
 
 def serialize(result) -> dict:
@@ -122,16 +125,42 @@ def create_app(store: SimulationStore | None = None, log_runs: bool = False) -> 
             "runs_planned": len(specs),
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
+        record["featured_run"] = specs[0].run_id if specs else None
         app.state.store.save(sim_id, record)
-        # Runs fan out on local threads for now; A3 moves the same RunSpecs to Cloud Run Job tasks.
-        sim = run_simulation(specs, twins,
-                             lambda spec: demo.make_twin_model(spec, personas, fake_scenario=req.scenario),
-                             max_days=req.max_days)
-        record |= {"status": "done", "pool_iid": req.pool_iid, **serialize_simulation(sim, woman, men, matched)}
-        if app.state.log_runs:
-            record["log_dir"] = str(write_simulation(sim_id, sim, woman, men))
-        app.state.store.save(sim_id, record)
-        return record
+        store = app.state.store
+
+        def stream(spec: RunSpec):
+            seq = [0]
+
+            def on_day(day, events, announcements, standing_words):
+                items = feed.day_feed(spec.run_id, seq[0], day, events, announcements, standing_words)
+                seq[0] += len(items)
+                store.add_events(sim_id, [i.to_dict() for i in items])
+            return on_day
+
+        def run() -> dict:
+            # Runs fan out on local threads for now; A3 moves the same RunSpecs to Cloud Run Job tasks.
+            sim = run_simulation(specs, twins,
+                                 lambda spec: demo.make_twin_model(spec, personas, fake_scenario=req.scenario),
+                                 featured=stream, max_days=req.max_days)
+            done = record | {"status": "done", "pool_iid": req.pool_iid,
+                             **serialize_simulation(sim, woman, men, matched)}
+            if app.state.log_runs:
+                done["log_dir"] = str(write_simulation(sim_id, sim, woman, men))
+            store.save(sim_id, done)
+            return done
+
+        if req.background:
+            threading.Thread(target=run, name=f"sim-{sim_id}", daemon=True).start()
+            return record
+        return run()
+
+    @app.get("/simulations/{sim_id}/events")
+    def get_events(sim_id: str, after: int = -1) -> list[dict]:
+        """The featured run's feed events with seq > after (poll with the last seq you saw)."""
+        if app.state.store.get(sim_id) is None:
+            raise HTTPException(404, "simulation not found")
+        return app.state.store.events(sim_id, after)
 
     @app.get("/simulations/{sim_id}")
     def get_simulation(sim_id: str) -> dict:

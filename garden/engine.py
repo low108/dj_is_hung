@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from random import Random
+from collections.abc import Callable
 from typing import Protocol
 
 from . import immersion
@@ -60,7 +61,12 @@ class RunResult:
         return self.outcome is not OutcomeKind.EXCLUDED
 
 
-def run_world(config: WorldConfig, model: Model) -> RunResult:
+DayHook = Callable[[int, list[Event], list[Announcement], dict[str, str]], None]
+
+
+def run_world(config: WorldConfig, model: Model, on_day: DayHook | None = None) -> RunResult:
+    """Run one world. `on_day(day, events, announcements, standing_words)` is called as each day ends
+    (the live feed uses it); it never changes the run."""
     rng = Random(config.seed)
     events: list[Event] = []
     unrequited: list[Attempt] = []
@@ -129,6 +135,9 @@ def run_world(config: WorldConfig, model: Model) -> RunResult:
                                 standing[twin.alias], placed[twin.alias]))
 
         todays_events = [e for e in events if e.day == day]
+        if on_day:
+            words = {t.alias: standing_rules.describe(standing[t.alias]) for t in config.twins}
+            on_day(day, todays_events, [a for a in coordinator.announcements if a.day == day], words)
         if found := find_breach(day, [(e.twin, e.say) for e in todays_events]):
             return result(OutcomeKind.EXCLUDED, day, breach=found)  # checked first: a broken run proves nothing
         if breakout:

@@ -125,3 +125,18 @@ input[type="number"] {
 .verdict.good {
   border-left: 3px solid var(--accent);
 }
+
+.feed ol {
+  max-height: 22rem;
+  overflow-y: auto;
+  padding-left: 1.2rem;
+  margin: 0;
+}
+
+.feed li {
+  margin: 2px 0;
+}
+
+.feed li.announcement {
+  color: var(--muted);
+}
