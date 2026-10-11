@@ -99,6 +99,7 @@ export default function Home() {
   const [feedEvents, setFeedEvents] = useState<FeedEvent[]>([]);
   const [featuredRun, setFeaturedRun] = useState<string | null>(null);
   const [twinNames, setTwinNames] = useState<string[]>([]);
+  const [simId, setSimId] = useState<string | null>(null);
 
   async function follow(id: string) {
     // Poll the featured run's events and the simulation until it's done (Firestore listeners later).
@@ -130,6 +131,8 @@ export default function Home() {
     setSim(null);
     setFeedEvents([]);
     setFeaturedRun(null);
+    setTwinNames([]);
+    setSimId(null);
     try {
       const res = await fetch(`${API_URL}/simulations`, {
         method: "POST",
@@ -145,6 +148,7 @@ export default function Home() {
       const started: Simulation = await res.json();
       setFeaturedRun(started.featured_run ?? null);
       setTwinNames(started.twins ?? []);
+      setSimId(started.id);
       await follow(started.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -202,7 +206,7 @@ export default function Home() {
 
       {twinNames.length > 0 && (
         <section className="result map">
-          <GardenMap events={feedEvents} twins={twinNames} />
+          <GardenMap key={simId ?? "none"} events={feedEvents} twins={twinNames} />
         </section>
       )}
 
