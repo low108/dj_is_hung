@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from api.main import create_app
 from api.store import MemoryStore
-from garden import Action, Rung, ScriptedModel
+from garden import ScriptedModel
 from garden.batch import plan, run_simulation
 from garden.demo import FAKE_MODELS, POOL
 from garden.standing import START

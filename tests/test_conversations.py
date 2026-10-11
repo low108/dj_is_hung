@@ -255,10 +255,11 @@ def test_a_twin_sees_both_sides_of_the_conversation():
 
 
 def test_a_long_line_ends_at_a_whole_sentence():
-    long = ("I came here to meet people outside the life I knew. " * 3 + "And one more sentence that would not fit "
-            "anyway because it rambles on and on about the river, the light, the hall and everything else besides.")
-    line = _clean_speech("Lina", long)
-    assert line.endswith(".") and len(line) <= 400 and "rambles" not in line
+    first = "I came here to meet people outside the life I knew, " + "and the river keeps calling, " * 6 + "truly."
+    second = "Then the second sentence starts and rambles on about the lanterns, " * 3 + "forever."
+    line = _clean_speech("Lina", f"{first} {second}")  # together they run past the 400-character cap
+    assert len(first) < 400 < len(first) + len(second)
+    assert line == first  # the first whole sentence, not both cut off mid-word
     one_huge = "word " * 120
     cut = _clean_speech("Lina", one_huge.strip() + ".")
     assert cut.endswith("…") and len(cut) <= 401 and not cut.endswith(" …")

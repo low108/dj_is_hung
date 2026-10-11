@@ -153,20 +153,30 @@ def _clean_speech(alias: str, text: str) -> str:
         text = text[drafts[-1].end():]
     for stage in _STAGE:
         text = stage.sub(" ", text).strip()
+    text = re.sub(r"[\[\]*]", "", text).strip()  # a bracket or asterisk left without its pair is never speech
     for quote_open, quote_close in (('"', '"'), ("“", "”")):
         start = text.find(quote_open)
         if start != -1:
             end = text.rfind(quote_close)
-            line = text[start + 1 : end if end > start else None]
-            return _tidy(re.sub(r"\s+", " ", _NARRATION.sub(" ", line)), MAX_LINE_SENTENCES, MAX_LINE_CHARS)
-    prefixes = ("Answer:", f"{alias} says:", f"{alias} said:", f"{alias}:", f"{alias},", f"{alias} ")
+            line = re.sub(r"\s+", " ", _NARRATION.sub(" ", text[start + 1 : end if end > start else None]))
+            return _tidy(_without_own_name(alias, line.strip(), labels_only=True), MAX_LINE_SENTENCES, MAX_LINE_CHARS)
+    text = _without_own_name(alias, text)
+    return _tidy(text.splitlines()[0], MAX_LINE_SENTENCES, MAX_LINE_CHARS) if text else ""
+
+
+def _without_own_name(alias: str, text: str, labels_only: bool = False) -> str:
+    """Drop the speaker's own name from the start: Concordia adds it and models often repeat it ('Theo
+    Theo: Hey', 'Ren B., don't...'). Inside a quoted line only a label counts ('Lina:', 'Lina,'), not
+    'Lina ' starting a sentence."""
+    prefixes = ("Answer:", f"{alias} says:", f"{alias} said:", f"{alias}:", f"{alias},")
+    prefixes += () if labels_only else (f"{alias} ",)
     stripped = True
-    while stripped:  # Concordia adds the name and models often repeat it: 'Theo Theo: Hey'
+    while stripped:
         stripped = False
         for prefix in prefixes:
             if text.startswith(prefix):
                 text, stripped = text[len(prefix):].strip(), True
-    return _tidy(text.splitlines()[0], MAX_LINE_SENTENCES, MAX_LINE_CHARS) if text else ""
+    return text
 
 
 class ConcordiaTwins:

@@ -23,8 +23,8 @@ class AsksFelix(ScriptedModel):
         if twin.alias == "Lina" and situation and situation.phase == "date" and self.asked_on is None:
             self.dates.append(others[0].alias if others else None)
         if (twin.alias == "Lina" and situation and situation.wall_open and self.asked_on is None
-                and "Felix" in (situation.leave_targets or ())):
-            self.asked_on = day
+                and "Felix" in (situation.leave_targets or ()) and "Felix" not in situation.targets):
+            self.asked_on = day  # Felix isn't here: today's date (or the gathering) is someone else
             self.turn_of(twin, day)
             return Action(Rung.PROPOSE_LEAVING, "Felix", "Leave with me, Felix.")
         if twin.alias == "Felix" and situation and "Lina" in situation.invited_by:
@@ -36,8 +36,9 @@ class AsksFelix(ScriptedModel):
 def test_she_can_ask_a_man_she_met_before_even_on_a_date_with_someone_else():
     model = AsksFelix()
     result = run_world(WorldConfig(WORLD, seed=3), model)
+    assert model.asked_on is not None  # she did ask while he was away
     ask = next(e for e in result.events if e.twin == "Lina" and e.rung is Rung.PROPOSE_LEAVING)
-    assert ask.target == "Felix"  # not turned into keeping to herself, though Felix wasn't with her
+    assert ask.target == "Felix" and ask.day == model.asked_on  # not turned into keeping to herself
     assert result.outcome is OutcomeKind.BREAKOUT and set(result.pair) == {"Lina", "Felix"}
 
 
