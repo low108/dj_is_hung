@@ -366,12 +366,23 @@ button.link {
 }
 .twin-traits {
   display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 4px 12px;
-  margin-top: 12px;
+  gap: 8px;
+  margin: 12px 0;
 }
-.twin-traits dt {
+.twin-traits label {
+  display: grid;
+  gap: 2px;
   font-weight: 600;
+}
+.twin-traits input,
+.twin-traits select {
+  font: inherit;
+  font-weight: normal;
+  max-width: 100%;
+}
+.twin-traits .because ul {
+  margin: 2px 0 0;
+  padding-left: 18px;
 }
 .twin-traits dd {
   margin: 0;

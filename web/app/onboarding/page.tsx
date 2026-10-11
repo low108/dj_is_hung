@@ -10,10 +10,8 @@ import {
 } from "firebase/auth";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { firebaseAuth } from "../firebase";
+import { ApiError, authedFetch, firebaseAuth } from "../firebase";
 import TwinReview, { type TwinSummary } from "./TwinReview";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
 
 /** GET /me/onboarding: where the user is, so they can resume where they left off. */
 type Progress = {
@@ -36,31 +34,12 @@ export default function Onboarding() {
   const [busy, setBusy] = useState(false);
   const [twin, setTwin] = useState<TwinSummary | null>(null);
 
-  async function call<T = Progress>(
-    path: string,
-    body?: unknown,
-    who: User | null | undefined = user,
-    method?: string,
-  ): Promise<T> {
-    const token = await who!.getIdToken();
-    const res = await fetch(`${API_URL}${path}`, {
-      method: method ?? (body === undefined ? "GET" : "POST"),
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const detail = await res.json().catch(() => null);
-      throw new Error(detail?.detail ?? `API returned ${res.status}`);
-    }
-    return res.json();
-  }
-
-  /** Runs one API step; true if it worked (the error is shown otherwise). */
-  async function run(step: () => Promise<Progress>): Promise<boolean> {
+  /** Runs one API step and stores its reply with `keep`; true if it worked (the error is shown otherwise). */
+  async function run<T>(step: () => Promise<T>, keep: (value: T) => void): Promise<boolean> {
     setBusy(true);
     setError(null);
     try {
-      setProgress(await step());
+      keep(await step());
       return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -69,6 +48,10 @@ export default function Onboarding() {
       setBusy(false);
     }
   }
+  const progressStep = (path: string, body?: unknown) =>
+    run(() => authedFetch<Progress>(user!, path, { body }), setProgress);
+  const twinStep = (path: string, opts: { method?: string; body?: unknown }) =>
+    run(() => authedFetch<TwinSummary>(user!, path, opts), setTwin);
 
   useEffect(() => {
     getRedirectResult(firebaseAuth()).catch((e) => setError(`Sign-in failed: ${e.message}`));
@@ -84,38 +67,23 @@ export default function Onboarding() {
     setTwin(null);
     if (!user) return;
     let stale = false;
-    call("/me/onboarding", undefined, user)
+    const shown = (e: unknown) => !stale && setError(e instanceof Error ? e.message : String(e));
+    authedFetch<Progress>(user, "/me/onboarding")
       .then((p) => !stale && setProgress(p))
-      .catch((e) => !stale && setError(e instanceof Error ? e.message : String(e)));
-    call<TwinSummary>("/me/twin", undefined, user)
+      .catch(shown);
+    authedFetch<TwinSummary>(user, "/me/twin")
       .then((t) => !stale && setTwin(t))
-      .catch(() => {}); // no twin yet
+      .catch((e) => !(e instanceof ApiError && e.status === 404) && shown(e)); // 404: no twin yet
     return () => {
       stale = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload only when the signed-in user changes
   }, [user]);
 
   const current = progress?.current;
 
-  /** Twin steps share run()'s busy and error handling but update the twin, not the progress. */
-  async function twinStep(step: () => Promise<TwinSummary>): Promise<boolean> {
-    setBusy(true);
-    setError(null);
-    try {
-      setTwin(await step());
-      return true;
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      return false;
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function submit() {
     if (!current || !draft.trim()) return;
-    if (await run(() => call("/me/answers", { question_id: current.id, text: draft }))) setDraft("");
+    if (await progressStep("/me/answers", { question_id: current.id, text: draft })) setDraft("");
   }
 
   return (
@@ -146,7 +114,7 @@ export default function Onboarding() {
           </label>
           <button
             disabled={!agreed || busy}
-            onClick={() => run(() => call("/me/consent", { agree: true, version: progress.consent_version }))}
+            onClick={() => progressStep("/me/consent", { agree: true, version: progress.consent_version })}
           >
             Continue
           </button>
@@ -179,10 +147,10 @@ export default function Onboarding() {
         <section className="result" data-testid="done">
           <h2>That&apos;s everything</h2>
           <p>Thank you. Your answers are saved.</p>
-          <button disabled={busy} onClick={() => twinStep(() => call<TwinSummary>("/me/twin", {}))}>
+          <button disabled={busy} onClick={() => twinStep("/me/twin", { body: {} })}>
             {busy ? "Building your twin…" : twin ? "Rebuild my twin from my answers" : "Build my twin"}
           </button>
-          {twin && (
+          {twin?.reviewed && (
             <p className="meta">
               Your twin can now date in the <Link href="/">Garden</Link>: pick &ldquo;My twin&rdquo; as the pool.
             </p>
@@ -192,11 +160,12 @@ export default function Onboarding() {
 
       {user && twin && (
         <TwinReview
+          key={twin.version} // a rebuilt or changed twin starts with nothing half-edited
           twin={twin}
           busy={busy}
-          onSave={(section, text) =>
-            twinStep(() => call<TwinSummary>(`/me/twin/sections/${section}`, { text }, user, "PUT"))
-          }
+          onSave={(section, text) => twinStep(`/me/twin/sections/${section}`, { method: "PUT", body: { text } })}
+          onTraits={(traits) => twinStep("/me/twin/traits", { method: "PUT", body: traits })}
+          onConfirm={() => twinStep("/me/twin/review", { body: {} })}
         />
       )}
 

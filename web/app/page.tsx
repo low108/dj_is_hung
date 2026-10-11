@@ -7,12 +7,11 @@ import { useEffect, useRef, useState } from "react";
 import type { Progress } from "./garden/GardenMap";
 import Timeline, { isWallCrossing } from "./garden/Timeline";
 import TwinPanel, { type TwinState } from "./garden/TwinPanel";
-import { firebaseAuth } from "./firebase";
+import { API_URL, ApiError, authedFetch, firebaseAuth } from "./firebase";
 
 // Phaser touches `window`, so the map only loads in the browser.
 const GardenMap = dynamic(() => import("./garden/GardenMap"), { ssr: false });
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
 
 type Scenario = "breakout" | "unrequited" | "timeout" | "excluded";
 
@@ -154,22 +153,24 @@ export default function Home() {
 
   // A signed-in user with a twin can put her twin in the Garden ("My twin" pool).
   const [user, setUser] = useState<User | null>(null);
-  const [myAlias, setMyAlias] = useState<string | null>(null);
+  const [myTwin, setMyTwin] = useState<{ alias: string; reviewed: boolean } | null>(null);
   useEffect(() => onAuthStateChanged(firebaseAuth(), setUser), []);
   useEffect(() => {
-    setMyAlias(null);
+    setMyTwin(null);
     if (!user) return;
     let stale = false;
-    user
-      .getIdToken()
-      .then((token) => fetch(`${API_URL}/me/twin`, { headers: { Authorization: `Bearer ${token}` } }))
-      .then((r) => (r.ok ? r.json() : null))
-      .then((t) => !stale && setMyAlias(t?.alias ?? null))
-      .catch(() => {});
+    authedFetch<{ alias: string; reviewed: boolean }>(user, "/me/twin")
+      .then((t) => !stale && setMyTwin(t))
+      .catch((e) => !(e instanceof ApiError && e.status === 404) && console.warn("couldn't load your twin", e));
     return () => {
       stale = true;
     };
   }, [user]);
+
+  // Signed out, or no reviewed twin: "My twin" can't stay selected.
+  useEffect(() => {
+    if (!myTwin?.reviewed) setPoolIid((p) => (p === MY_TWIN ? "" : p));
+  }, [myTwin]);
 
   useEffect(() => {
     fetch(`${API_URL}/pools`)
@@ -394,7 +395,11 @@ export default function Home() {
           Pool{" "}
           <select value={poolIid} onChange={(e) => setPoolIid(e.target.value)} aria-label="Pool">
             <option value="">Demo pool (Mara)</option>
-            {myAlias && <option value={MY_TWIN}>My twin ({myAlias}) with the demo men</option>}
+            {myTwin && (
+              <option value={MY_TWIN} disabled={!myTwin.reviewed}>
+                My twin ({myTwin.alias}) with the demo men{myTwin.reviewed ? "" : " (review it first)"}
+              </option>
+            )}
             {pools.map((p) => (
               <option key={p.iid} value={p.iid}>
                 Participant {p.iid}: {p.matches} matches of {p.dates} dates

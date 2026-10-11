@@ -58,11 +58,11 @@ def make_followup_model():
         return None
     from .llm import FLASH, make_model
 
-    return make_model(spec or f"gemini:{FLASH}")
+    return make_model(spec or f"gemini:{FLASH}", attempts=2)  # a user is waiting on the page
 
 
 def with_her_twin(alias: str, persona: str, threshold: float):
-    """The demo pool's men with a user's own twin as the woman (D4)."""
+    """The demo pool's men with a user's own twin as the woman (D4); see twin_builder.garden_inputs."""
     from .pools import PoolSetup
 
     men = tuple(t for t in POOL if t.alias != WOMAN)
@@ -72,12 +72,14 @@ def with_her_twin(alias: str, persona: str, threshold: float):
 
 def make_extraction_model():
     """The Pro-tier model that builds twins (D4): EXTRACTION_MODEL if set, else Gemini Pro when a Gemini
-    key is set, else ILMU (development). None when no model is configured."""
+    key is set, else ILMU (development only: JSON mode without schema enforcement). None when no model
+    is configured. Few retries: a user is waiting on the page."""
     from .llm import PRO, make_model
+    from .twin_builder import ExtractionModel
 
     spec = os.environ.get("EXTRACTION_MODEL")
     if not spec and os.environ.get("GEMINI_API_KEY"):
         spec = f"gemini:{PRO}"
     if not spec and os.environ.get("ILMU_API_KEY"):
         spec = "ilmu:ilmu-mini-v3.3"
-    return (spec, make_model(spec)) if spec else None
+    return ExtractionModel(spec, make_model(spec, attempts=2)) if spec else None

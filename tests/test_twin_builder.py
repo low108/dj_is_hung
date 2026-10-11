@@ -11,6 +11,10 @@ from garden import twin_builder as tb
 LONG = "I love slow Sunday mornings with coffee, long walks and calling my sister."
 
 
+def dumps(x: tb.Extraction) -> str:
+    return x.model_dump_json()
+
+
 def extraction(rebel=0.8, n=30):
     sections = list(tb.SECTIONS)
     return tb.Extraction(
@@ -29,10 +33,10 @@ class Extractor:
 
 
 def client(store=None, reply=None, uid="user-1"):
-    reply = tb.dumps(extraction()) if reply is None else reply
+    reply = dumps(extraction()) if reply is None else reply
     model = Extractor(reply)
     app = create_app(store or MemoryStore(), verify_token=lambda token: token, followup_model=lambda: None,
-                     extraction_model=lambda: ("fake:extractor", model))
+                     extraction_model=lambda: tb.ExtractionModel("fake:extractor", model))
     return TestClient(app, headers={"Authorization": f"Bearer {uid}"}), model
 
 
@@ -48,7 +52,9 @@ def test_a_completed_q_and_a_produces_a_twin_with_an_anonymous_alias():
     twin = c.post("/me/twin").json()
     assert twin["alias"] in tb.ALIASES and twin["memory_count"] == 30
     assert [s["id"] for s in twin["sections"]] == list(tb.SECTIONS)
-    assert twin["rebelliousness_because"] == [qa.BY_ID["rules_bend"].text]  # unknown ids dropped
+    because = twin["rebelliousness_because"]  # unknown ids dropped; the user sees their own answer
+    assert because == [{"question": qa.BY_ID["rules_bend"].text, "answer": f"{LONG} (rules_bend)"}]
+    assert twin["reviewed"] is False
     assert len(model.prompts) == 1 and "[rules_bend]" in model.prompts[0]  # one call, over every answer
 
 
@@ -97,13 +103,13 @@ def test_rebuilding_keeps_the_users_edits():
     complete_qa(c)
     c.post("/me/twin")
     c.put("/me/twin/sections/past", json={"text": "My words."})
-    again, _ = client(store, reply=tb.dumps(extraction(rebel=0.1)))
+    again, _ = client(store, reply=dumps(extraction(rebel=0.1)))
     twin = again.post("/me/twin").json()
     assert next(s for s in twin["sections"] if s["id"] == "past")["text"] == "My words."
     assert twin["rebelliousness"] == 0.1
 
 
-@pytest.mark.parametrize("rebel,expected", [(0.0, 0.8), (0.5, 0.6), (1.0, 0.4)])
+@pytest.mark.parametrize("rebel,expected", [(0.0, 0.68), (0.5, 0.6), (1.0, 0.52)])
 def test_rebelliousness_sets_the_verdict_threshold(rebel, expected):
     assert tb.threshold(rebel) == expected
 
@@ -114,17 +120,20 @@ def test_her_twin_can_be_the_woman_in_a_simulation():
     complete_qa(c)
     alias = c.post("/me/twin").json()["alias"]
     c.put("/me/twin/sections/rules", json={"text": "I would cross any wall for love."})
+    assert c.post("/simulations", json={"my_twin": True}).status_code == 409  # not reviewed yet
+    c.post("/me/twin/review")
     sim = c.post("/simulations", json={"my_twin": True, "scenario": "breakout", "seeds": [0]}).json()
     assert sim["woman"] == alias and alias in sim["twins"] and "Mara" not in sim["twins"]
     assert sim["result"]["outcome"] == "breakout" and alias in sim["result"]["pair"]
     assert [r["candidate"] for r in sim["ranking"]][0] == demo.MAN
+    assert sim["my_twin"] is True
 
 
 def test_her_persona_and_threshold_reach_the_world():
     her = tb.new_twin("u", extraction(rebel=1.0), "fake", "now")
-    pool = demo.with_her_twin(her["alias"], tb.persona_text(her), tb.threshold(1.0))
+    pool = demo.with_her_twin(*tb.garden_inputs(her))
     assert pool.personas[her["alias"]].startswith("I remember moment")
-    assert pool.thresholds == ((her["alias"], 0.4),) and pool.woman == her["alias"]
+    assert pool.thresholds == ((her["alias"], 0.52),) and pool.woman == her["alias"]
 
 
 def test_a_my_twin_simulation_needs_sign_in_and_a_twin():
@@ -148,8 +157,51 @@ def test_a_model_outage_is_a_503_not_a_crash():
             raise RuntimeError("429 RESOURCE_EXHAUSTED limit: 0")
 
     app = create_app(MemoryStore(), verify_token=lambda t: t, followup_model=lambda: None,
-                     extraction_model=lambda: ("gemini:pro", Down()))
+                     extraction_model=lambda: tb.ExtractionModel("gemini:pro", Down()))
     c = TestClient(app, headers={"Authorization": "Bearer u"})
     complete_qa(c)
     res = c.post("/me/twin")
     assert res.status_code == 503 and "limit" not in res.json()["detail"]
+
+
+def test_edited_traits_override_the_extraction_and_set_her_threshold():
+    c, _ = client()
+    complete_qa(c)
+    assert c.post("/me/twin").json()["threshold"] == tb.threshold(0.8)
+    twin = c.put("/me/twin/traits", json={"rebelliousness": 0.0, "values": ["loyalty"]}).json()
+    assert twin["rebelliousness"] == 0.0 and twin["values"] == ["loyalty"] and twin["threshold"] == 0.68
+    assert twin["dealbreakers"] == ["dishonesty"] and twin["traits_edited"] == ["rebelliousness", "values"]
+    assert c.put("/me/twin/traits", json={"rebelliousness": 3}).status_code == 422
+
+
+def test_a_rebuild_keeps_edits_but_needs_review_again():
+    store = MemoryStore()
+    c, _ = client(store)
+    complete_qa(c)
+    c.post("/me/twin")
+    c.put("/me/twin/traits", json={"rebelliousness": 0.2})
+    assert c.post("/me/twin/review").json()["reviewed"] is True
+    again, _ = client(store)
+    twin = again.post("/me/twin").json()
+    assert twin["reviewed"] is False and twin["rebelliousness"] == 0.2 and twin["version"] == 3
+
+
+def test_a_thin_extraction_is_rejected():
+    c, _ = client(reply=dumps(extraction(n=3)))
+    complete_qa(c)
+    assert c.post("/me/twin").status_code == 502
+
+
+def test_editing_without_a_twin_is_a_404():
+    c, _ = client()
+    assert c.put("/me/twin/sections/life", json={"text": "x"}).status_code == 404
+    assert c.put("/me/twin/traits", json={"rebelliousness": 0.1}).status_code == 404
+    assert c.post("/me/twin/review").status_code == 404
+
+
+def test_the_interview_is_fenced_off_from_instructions():
+    c, model = client()
+    complete_qa(c)
+    c.post("/me/twin")
+    prompt = model.prompts[0]
+    assert prompt.index("<<<INTERVIEW") < prompt.index("[life_week]") < prompt.index("INTERVIEW>>>")
