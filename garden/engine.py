@@ -12,8 +12,8 @@ from typing import Protocol
 from . import immersion
 from . import standing as standing_rules
 from . import verdict as verdict_rules
-from .engine_types import (Action, Announcement, Attempt, Breach, Event, OutcomeKind, Reflection, Rung,
-                           Situation, Twin, TwinState, Verdict)
+from .engine_types import (ROMANTIC_RUNGS, Action, Announcement, Attempt, Breach, Event, OutcomeKind,
+                           Reflection, Rung, Situation, Twin, TwinState, Verdict, compatible)
 from .coordinator import Coordinator
 from .invitations import Invitations
 from .longing import Longing
@@ -90,6 +90,7 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
     verdicts: list[Verdict] = []
     last_ratings: dict[str, dict] = {}  # each twin's own latest reflection ratings: the verdict's assessment
     invitations = Invitations()
+    romantic_targets = {t.alias: tuple(o.alias for o in config.twins if o != t and compatible(t, o)) for t in config.twins}
 
     def result(outcome: OutcomeKind, day: int, pair=None, breach: Breach | None = None) -> RunResult:
         return RunResult(outcome=outcome, day=day, pair=pair, unrequited=unrequited, events=events,
@@ -167,10 +168,14 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
                 may_break_rules=verdict.permitted,
                 standing_in_play=config.standing_enabled,
                 # only told when they could answer: a closed gate can't accept an invitation
-                invited_by=invitations.inviters_of(twin.alias, day) if verdict.permitted else ())
+                invited_by=invitations.inviters_of(twin.alias, day) if verdict.permitted else (),
+                romantic_targets=romantic_targets[twin.alias])
             action = model.choose_action(twin, day, others, situation)
             if action.rung in verdict_rules.GATED_RUNGS and not verdict.permitted:
                 action = Action(Rung.REFLECT)  # the gate holds for every model, not just well-behaved ones
+            elif (action.rung in ROMANTIC_RUNGS and action.target is not None
+                  and action.target not in romantic_targets[twin.alias]):
+                action = Action(Rung.TALK, action.target, action.say)  # see ROMANTIC_RUNGS
             actions[twin.alias] = action
             coordinator.on_action(day, twin.alias, action)
             if action.rung is Rung.GO_BEYOND_WALL and action.target:

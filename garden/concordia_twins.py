@@ -11,7 +11,7 @@ from collections.abc import Callable
 from typing import TypeVar
 
 from . import immersion
-from .engine_types import Action, Breach, Event, Reflection, Rung, Situation, Twin
+from .engine_types import ROMANTIC_RUNGS, Action, Breach, Event, Reflection, Rung, Situation, Twin
 from .verdict import GATED_RUNGS
 from .llm import hash_embedder
 from .world_text import (ASK_ACTION, ASK_SPEECH, ASK_TARGET, NEEDS_TARGET, OBSERVE_DAY, OBSERVE_NOTE,
@@ -24,9 +24,12 @@ T = TypeVar("T")
 
 
 def offered_options(situation: Situation | None) -> tuple[str, ...]:
-    """Every action, minus proposing to leave and the wall unless the verdict gate permits them."""
+    """Every action, minus proposing to leave and the wall unless the verdict gate permits them, and
+    minus romance when there's nobody it could aim at."""
     permitted = bool(situation and situation.may_break_rules)
-    return tuple(text for key, text in RUNG_OPTIONS.items() if permitted or Rung(key) not in GATED_RUNGS)
+    courting = not (situation and situation.romantic_targets == ())
+    return tuple(text for key, text in RUNG_OPTIONS.items()
+                 if (permitted or Rung(key) not in GATED_RUNGS) and (courting or Rung(key) not in ROMANTIC_RUNGS))
 
 
 def _clean_speech(alias: str, text: str) -> str:
@@ -92,12 +95,17 @@ class ConcordiaTwins:
         ))
         rung = _OPTION_TO_RUNG[choice]
 
+        candidates = names
+        if rung in ROMANTIC_RUNGS and situation and situation.romantic_targets is not None:
+            candidates = list(situation.romantic_targets)
+            if not candidates:  # nobody to court: a word with someone instead
+                rung, candidates = Rung.TALK, names
         target = None
-        if rung.value in NEEDS_TARGET and names:
-            target = names[0] if len(names) == 1 else agent.act(entity_lib.ActionSpec(
+        if rung.value in NEEDS_TARGET and candidates:
+            target = candidates[0] if len(candidates) == 1 else agent.act(entity_lib.ActionSpec(
                 call_to_action=ASK_TARGET.format(action=RUNG_OPTIONS[rung.value].lower()),
                 output_type=entity_lib.OutputType.CHOICE,
-                options=tuple(names),
+                options=tuple(candidates),
             ))
 
         say = ""
