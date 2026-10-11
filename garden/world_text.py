@@ -47,3 +47,20 @@ OBSERVE_INVITED = "Day {day}: {inviter} has asked you to leave the Garden togeth
 ASK_ACTION = "What does {{name}} do now on day {day}?"
 ASK_TARGET = "Who does {{name}} choose to {action}?"
 ASK_SPEECH = "What does {{name}} say to {target}? One short line of dialogue only."
+
+# Conversations (#62): a date or a gathering is a back-and-forth, so the question is about the next
+# move in it, not the whole day, and speech answers what was just said and shares something real.
+# Every action question still ends with ASK_ACTION's words.
+ASK_DATE = "{{name}} is on a date with {partner}. What does {{name}} do now on day {day}?"
+ASK_GATHERING = "{{name}} is at the gathering at the hall. What does {{name}} do now on day {day}?"
+ASK_AFTER_LINE = '{speaker} has just said to {{name}}: "{line}" What does {{name}} do now on day {day}?'
+ASK_OPENER = ("What does {{name}} say to {target}? Say something true about yourself, or ask about {target}'s "
+              "life: work, what you love, what you are looking for. One or two sentences of dialogue only.")
+ASK_REPLY = ("What does {{name}} say to {target}? Answer what {target} just said, and share something true "
+             "about yourself: your work, what you love, what you are looking for. One or two sentences of "
+             "dialogue only.")
+# On a date, the conversation's options (the rest of the ladder is the day's, not the conversation's).
+DATE_OPTIONS = {
+    "talk": "Keep talking with {partner}",
+    "reflect": "End the date for today and spend some time alone",
+}

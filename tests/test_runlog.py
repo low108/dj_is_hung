@@ -54,7 +54,9 @@ def test_changing_any_prompt_text_changes_the_version():
 def test_every_twin_facing_template_is_versioned():
     texts = prompts.prompt_texts()
     assert set(texts["templates"]) == {"OBSERVE_DAY", "OBSERVE_NOTE", "OBSERVE_SAID", "OBSERVE_REFLECTION", "OBSERVE_INVITED",
-                                       "ASK_ACTION", "ASK_TARGET", "ASK_SPEECH"}
+                                       "ASK_ACTION", "ASK_TARGET", "ASK_SPEECH", "ASK_DATE", "ASK_GATHERING",
+                                       "ASK_AFTER_LINE", "ASK_OPENER", "ASK_REPLY"}
+    assert "talk" in texts["date_options"] and "reflect" in texts["date_options"]
     assert len(texts["standing_words"]) == 5 and len(texts["longing_words"]) == 3
     assert "RUMOUR" in texts["schedule"] and "SCHEDULE_GATHERING" in texts["schedule"]
 

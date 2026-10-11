@@ -23,7 +23,9 @@ def prompt_texts() -> dict:
         "standing_memories": list(world_text.STANDING_MEMORIES),
         "rung_options": dict(world_text.RUNG_OPTIONS),
         "templates": {k: getattr(world_text, k) for k in (
-            "OBSERVE_DAY", "OBSERVE_NOTE", "OBSERVE_SAID", "OBSERVE_REFLECTION", "OBSERVE_INVITED", "ASK_ACTION", "ASK_TARGET", "ASK_SPEECH")},
+            "OBSERVE_DAY", "OBSERVE_NOTE", "OBSERVE_SAID", "OBSERVE_REFLECTION", "OBSERVE_INVITED", "ASK_ACTION", "ASK_TARGET", "ASK_SPEECH",
+            "ASK_DATE", "ASK_GATHERING", "ASK_AFTER_LINE", "ASK_OPENER", "ASK_REPLY")},
+        "date_options": dict(world_text.DATE_OPTIONS),
         "reflection_prompt": REFLECTION_PROMPT,
         "reflection_ratings": [RATINGS_WITH_STANDING, RATINGS_WITHOUT_STANDING],
         "choice_hint": CHOICE_HINT,

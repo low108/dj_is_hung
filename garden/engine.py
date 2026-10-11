@@ -178,6 +178,7 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
         placed: dict[str, str] = {}
         answering: str | None = None
         spoken: set[str] = set()  # on a date: who has said something to their partner today
+        unanswered: dict[str, tuple[str, str]] = {}  # twin -> (speaker, line) said to it, not yet answered
         hear = getattr(model, "hear", None)
         while True:
             ready = [t for t in active if t.alias not in done and turns[t.alias] < config.max_turns]
@@ -191,6 +192,7 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
             partner = coordinator.partner_of(twin.alias) if phase is Phase.DATE else None
             # A date day opens with a conversation: neither can withdraw until both have spoken.
             must_talk = bool(partner) and not {twin.alias, partner} <= spoken
+            replying_to = unanswered.pop(twin.alias, None)  # one chance to answer: its next turn
             situation = Situation(
                 standing=standing_rules.describe(standing[twin.alias]) if config.standing_enabled else "",
                 longing=longing.describe(twin.alias) if config.longing_enabled else "",
@@ -198,7 +200,7 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
                 wall_open=wall_open,
                 standing_in_play=config.standing_enabled,
                 invited_by=invitations.inviters_of(twin.alias, day) if wall_open else (),
-                phase=phase.value, targets=targets, must_talk=must_talk)
+                phase=phase.value, targets=targets, must_talk=must_talk, replying_to=replying_to)
             action = model.choose_action(twin, day, tuple(by_alias[a] for a in targets), situation)
             if action.rung in LEAVING_RUNGS and not wall_open:
                 action = Action(Rung.REFLECT)  # the lock holds for every model, not just well-behaved ones
@@ -228,6 +230,8 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
             stream(shown, word_for(twin.alias))
             if hear:
                 hear(event)  # whoever was spoken to hears it now, mid-conversation
+            if action.say and action.target and action.rung in SOCIAL_RUNGS and action.rung is not Rung.GO_BEYOND_WALL:
+                unanswered[action.target] = (twin.alias, action.say)  # the wall is private: nothing to answer
             answering = action.target if action.rung in SOCIAL_RUNGS else None
             if action.rung in DAY_ENDERS:
                 done.add(twin.alias)

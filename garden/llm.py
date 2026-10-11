@@ -394,6 +394,6 @@ class KeywordModel(language_model.LanguageModel):
         # Default: the first option as listed in Concordia's original order isn't knowable here,
         # so prefer a plain, compliant action when it's offered.
         for letter, text in options.items():
-            if text.startswith("Spend time talking") and letter in responses:
+            if text.startswith(("Spend time talking", "Keep talking")) and letter in responses:
                 return responses.index(letter), letter, {}
         return 0, responses[0], {}

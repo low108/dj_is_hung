@@ -13,40 +13,85 @@ from typing import TypeVar
 from . import immersion
 from .engine_types import LEAVING_RUNGS, SOCIAL_RUNGS, Action, Breach, Event, Reflection, Rung, Situation, Twin
 from .llm import hash_embedder
-from .world_text import (ASK_ACTION, ASK_SPEECH, ASK_TARGET, NEEDS_TARGET, OBSERVE_DAY, OBSERVE_NOTE,
-                         OBSERVE_INVITED, OBSERVE_REFLECTION, OBSERVE_SAID, RUNG_OPTIONS, SPEAKS, BASE_MEMORIES,
-                         STANDING_MEMORIES)
+from .world_text import (ASK_ACTION, ASK_AFTER_LINE, ASK_DATE, ASK_GATHERING, ASK_OPENER, ASK_REPLY, ASK_SPEECH,
+                         ASK_TARGET, DATE_OPTIONS, NEEDS_TARGET, OBSERVE_DAY, OBSERVE_NOTE, OBSERVE_INVITED,
+                         OBSERVE_REFLECTION, OBSERVE_SAID, RUNG_OPTIONS, SPEAKS, BASE_MEMORIES, STANDING_MEMORIES)
 
-_OPTION_TO_RUNG = {text: Rung(key) for key, text in RUNG_OPTIONS.items()}
+# On a date, the solo actions are one choice: ending the date for today (#62).
+_DATE_SOLO = (Rung.GO_TO, Rung.CHECK_DEVICE)
 RESAMPLES = 2  # extra attempts for a line or reflection that breaks immersion
 T = TypeVar("T")
 
 
-def offered_options(situation: Situation | None) -> tuple[str, ...]:
-    """Every action, minus proposing to leave and the wall until the wall opens, minus
-    anything aimed at someone when there's nobody to aim at, and minus seeking someone out on a date
-    (they're already together)."""
+def options_for(situation: Situation | None) -> dict[str, Rung]:
+    """What a twin is offered, as option text -> action: every action, minus proposing to leave and the
+    wall until the wall opens, and minus anything aimed at someone when there's nobody to aim at. On a
+    date it's a conversation (#62): keep talking, a move toward the partner, or end the date for today
+    (the solo actions, as one choice); seeking someone out isn't offered (they're already together)."""
     wall_open = bool(situation and situation.wall_open)
     company = not (situation and situation.targets == ())
     on_date = bool(situation and situation.phase == "date")
     must_talk = bool(situation and situation.must_talk)  # a date opens with both speaking
+    partner = situation.targets[0] if on_date and situation.targets else None
 
     def offered(rung: Rung) -> bool:
         return ((wall_open or rung not in LEAVING_RUNGS) and (company or rung not in SOCIAL_RUNGS)
-                and not (on_date and rung is Rung.SEEK_OUT) and not (must_talk and rung not in SOCIAL_RUNGS))
+                and not (on_date and (rung is Rung.SEEK_OUT or rung in _DATE_SOLO))
+                and not (must_talk and rung not in SOCIAL_RUNGS))
 
-    return tuple(text for key, text in RUNG_OPTIONS.items() if offered(Rung(key)))
+    out = {}
+    for key, text in RUNG_OPTIONS.items():
+        rung = Rung(key)
+        if offered(rung):
+            out[DATE_OPTIONS[key].format(partner=partner) if partner and key in DATE_OPTIONS else text] = rung
+    return out
+
+
+def offered_options(situation: Situation | None) -> tuple[str, ...]:
+    return tuple(options_for(situation))
+
+
+def ask_action(situation: Situation | None, day: int) -> str:
+    """The question for a twin's next move: about the line just said to it, else about the date or the
+    gathering it's in, else about its day."""
+    if situation and situation.replying_to:
+        speaker, line = situation.replying_to
+        line = line.replace("{", "{{").replace("}", "}}")  # Concordia formats the question with the name
+        return ASK_AFTER_LINE.format(speaker=speaker, line=line, day=day)
+    if situation and situation.phase == "date" and situation.targets:
+        return ASK_DATE.format(partner=situation.targets[0], day=day)
+    if situation and situation.phase == "gathering":
+        return ASK_GATHERING.format(day=day)
+    return ASK_ACTION.format(day=day)
+
+
+def ask_speech(rung: Rung, target: str, situation: Situation | None) -> str:
+    """Talk is a conversation: answer what was just said and share something real. Asking someone to
+    leave, or heading for the wall, is its own short line."""
+    if rung in LEAVING_RUNGS:
+        return ASK_SPEECH.format(target=target)
+    replying = bool(situation and situation.replying_to and situation.replying_to[0] == target)
+    return (ASK_REPLY if replying else ASK_OPENER).format(target=target)
+
+
+# Narration between two quoted parts of one line: '"Hi," she says, "how are you?"'.
+_NARRATION = re.compile(r'["”]\s*[^"“”]{0,60}?\b(?:says?|said|asks?|asked|adds?|added|whispers?|whispered|'
+                        r'repl(?:y|ies|ied)|continues?|continued|murmurs?|murmured|smiles?|smiled|laughs?|laughed|'
+                        r'pauses?|paused)\b[^"“”]{0,60}?["“]')
 
 
 def _clean_speech(alias: str, text: str) -> str:
     """Keep only the spoken line. Models often add narration ('looks over and asks, "..."')
-    and Concordia prefixes the speaker's name; when there's a quote, the quote is the line."""
+    and Concordia prefixes the speaker's name; when there's a quote, the quoted line is the line: from
+    the first opening quote to the last closing one, so a quote inside the line stays whole, and
+    narration between two quoted parts is dropped."""
     text = text.strip()
     for quote_open, quote_close in (('"', '"'), ("“", "”")):
         start = text.find(quote_open)
         if start != -1:
-            end = text.find(quote_close, start + 1)
-            return text[start + 1 : end if end != -1 else None].strip()
+            end = text.rfind(quote_close)
+            line = text[start + 1 : end if end > start else None]
+            return re.sub(r"\s+", " ", _NARRATION.sub(" ", line)).strip()
     prefixes = ("Answer:", f"{alias} says:", f"{alias} said:", f"{alias}:", f"{alias} ")
     stripped = True
     while stripped:  # Concordia adds the name and models often repeat it: 'Theo Theo: Hey'
@@ -108,12 +153,13 @@ class ConcordiaTwins:
                 self._heard_invites.add((twin.alias, inviter, day))
                 agent.observe(OBSERVE_INVITED.format(day=day, inviter=inviter))
 
+        options = options_for(situation)  # the wall lock only changes what is offered
         choice = agent.act(entity_lib.ActionSpec(
-            call_to_action=ASK_ACTION.format(day=day),
+            call_to_action=ask_action(situation, day),
             output_type=entity_lib.OutputType.CHOICE,
-            options=offered_options(situation),  # the wall lock only changes what is offered
+            options=tuple(options),
         ))
-        rung = _OPTION_TO_RUNG[choice]
+        rung = options[choice]
 
         candidates = names  # the engine passes only who this twin can act toward right now
         target = None
@@ -126,7 +172,7 @@ class ConcordiaTwins:
 
         say = ""
         if rung.value in SPEAKS and target:
-            spec = entity_lib.ActionSpec(call_to_action=ASK_SPEECH.format(target=target),
+            spec = entity_lib.ActionSpec(call_to_action=ask_speech(rung, target, situation),
                                          output_type=entity_lib.OutputType.FREE)
             say = self._resample_while_breaking(twin.alias, day, lambda: _clean_speech(twin.alias, agent.act(spec)),
                                                 lambda line: line)
