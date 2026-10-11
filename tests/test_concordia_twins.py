@@ -37,7 +37,7 @@ def test_concordia_twins_one_sided_wall_is_unrequited():
 
 
 def test_social_actions_carry_speech_and_reach_the_other_twin():
-    model, _ = twins({"Ren do now on day 1": "Look for someone"})
-    result = run_world(WorldConfig((MARA, REN), max_days=2, seed=1), model)
-    seek = [e for e in result.events if e.rung is Rung.SEEK_OUT]
-    assert seek and seek[0].say == "Come with me."
+    model, _ = twins({"Ren do now on day 1": "talking"})
+    result = run_world(WorldConfig((MARA, REN), max_days=1, seed=1), model)
+    talk = [e for e in result.events if e.rung is Rung.TALK and e.twin == "Ren"]
+    assert talk and talk[0].say == "Come with me." and talk[0].target == "Mara"

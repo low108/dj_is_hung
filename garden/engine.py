@@ -12,17 +12,21 @@ from typing import Protocol
 from . import immersion
 from . import standing as standing_rules
 from . import verdict as verdict_rules
-from .engine_types import (ROMANTIC_RUNGS, Action, Announcement, Attempt, Breach, Event, OutcomeKind,
+from .engine_types import (DAY_ENDERS, SOCIAL_RUNGS, Action, Announcement, Attempt, Breach, Event, OutcomeKind,
                            Reflection, Rung, Situation, Twin, TwinState, Verdict, compatible)
-from .coordinator import Coordinator
+from .coordinator import Coordinator, Phase
 from .invitations import Invitations
 from .longing import Longing
+
+
+MAX_TURNS = 20  # turns per twin per day: a conversation ends sooner when both have stopped
 
 
 @dataclass(frozen=True)
 class WorldConfig:
     twins: tuple[Twin, ...]
-    max_days: int = 10
+    max_days: int = 200  # a safety cap: a run ends when every pair has had its dates (or at a breakout)
+    max_turns: int = MAX_TURNS
     seed: int = 0
     standing_start: int = standing_rules.START
     thresholds: tuple[tuple[str, float], ...] = ()  # per-twin rebelliousness thresholds (alias, value)
@@ -90,7 +94,9 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
     verdicts: list[Verdict] = []
     last_ratings: dict[str, dict] = {}  # each twin's own latest reflection ratings: the verdict's assessment
     invitations = Invitations()
-    romantic_targets = {t.alias: tuple(o.alias for o in config.twins if o != t and compatible(t, o)) for t in config.twins}
+    meet = getattr(model, "meet", None)
+    if meet:  # models with memory get to know every twin before day one (idle twins reflect too)
+        meet(config.twins, config.standing_enabled)
 
     def result(outcome: OutcomeKind, day: int, pair=None, breach: Breach | None = None) -> RunResult:
         return RunResult(outcome=outcome, day=day, pair=pair, unrequited=unrequited, events=events,
@@ -148,41 +154,65 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
     def word_for(alias: str) -> str:
         return standing_rules.describe(standing[alias]) if config.standing_enabled else ""
 
-    for day in range(1, config.max_days + 1):
-        coordinator.start_day(day, longing.bond)
-        stream()
-        order = list(config.twins)
-        rng.shuffle(order)  # nobody gets to act first every day
+    gates: dict[str, Verdict] = {}
+
+    def targets_for(twin: Twin, phase: Phase) -> tuple[str, ...]:
+        """Who a twin can act toward today: its partner on a date, anyone it could be paired with at a
+        gathering. (Talking needs them still around; going to the wall for them doesn't, see play_day.)"""
+        if phase is Phase.DATE:
+            partner = coordinator.partner_of(twin.alias)
+            return (partner,) if partner else ()
+        if phase is Phase.GATHERING:
+            return tuple(o.alias for o in config.twins if o != twin and compatible(twin, o))
+        return ()
+
+    def play_day(day: int) -> tuple[tuple[str, str] | None, dict[str, str], list[tuple[str, Action]]]:
+        """Today's turns. Only twins on a date or at the gathering act. A twin keeps acting until it does
+        something on its own (which ends its day) or uses its MAX_TURNS; the twin just spoken to answers
+        next, otherwise whoever's turn comes up at random. Returns (breakout, wall crossings, actions)."""
+        by_alias = {t.alias: t for t in config.twins}
+        active = [t for t in config.twins if coordinator.phase_of(t.alias) is not Phase.IDLE]
+        turns = {t.alias: 0 for t in active}
+        done: set[str] = set()
         crossings: dict[str, str] = {}
-        actions: dict[str, Action] = {}
+        todays: list[tuple[str, Action]] = []
         placed: dict[str, str] = {}
-        for twin in order:
-            others = tuple(t for t in config.twins if t != twin)
-            verdict = verdict_rules.decide(day, twin.alias, last_ratings.get(twin.alias, {}),
-                                           config.threshold_for(twin.alias), config.gate_enabled)
-            verdicts.append(verdict)
+        answering: str | None = None
+        hear = getattr(model, "hear", None)
+        while True:
+            ready = [t for t in active if t.alias not in done and turns[t.alias] < config.max_turns]
+            if not ready:
+                return None, crossings, todays
+            twin = by_alias[answering] if answering in {t.alias for t in ready} else rng.choice(ready)
+            turns[twin.alias] += 1
+            phase = coordinator.phase_of(twin.alias)
+            targets = targets_for(twin, phase)
+            gate = gates[twin.alias]
             situation = Situation(
                 standing=standing_rules.describe(standing[twin.alias]) if config.standing_enabled else "",
                 longing=longing.describe(twin.alias) if config.longing_enabled else "",
                 schedule=coordinator.describe(twin.alias),
-                may_break_rules=verdict.permitted,
+                may_break_rules=gate.permitted,
                 standing_in_play=config.standing_enabled,
                 # only told when they could answer: a closed gate can't accept an invitation
-                invited_by=invitations.inviters_of(twin.alias, day) if verdict.permitted else (),
-                romantic_targets=romantic_targets[twin.alias])
-            action = model.choose_action(twin, day, others, situation)
-            if action.rung in verdict_rules.GATED_RUNGS and not verdict.permitted:
+                invited_by=invitations.inviters_of(twin.alias, day) if gate.permitted else (),
+                phase=phase.value, targets=targets)
+            action = model.choose_action(twin, day, tuple(by_alias[a] for a in targets), situation)
+            if action.rung in verdict_rules.GATED_RUNGS and not gate.permitted:
                 action = Action(Rung.REFLECT)  # the gate holds for every model, not just well-behaved ones
-            elif (action.rung in ROMANTIC_RUNGS and action.target is not None
-                  and action.target not in romantic_targets[twin.alias]):
-                action = Action(Rung.TALK, action.target, action.say)  # see ROMANTIC_RUNGS
-            actions[twin.alias] = action
+            elif action.rung in SOCIAL_RUNGS and (action.target not in targets or (
+                    action.rung is not Rung.GO_BEYOND_WALL and action.target in done)):
+                # Out of reach (or gone for the day, unless it's the wall, a private choice that doesn't
+                # need them there): it keeps to itself instead.
+                action = Action(Rung.REFLECT)
+            elif action.rung is Rung.SEEK_OUT and phase is Phase.DATE:
+                action = Action(Rung.TALK, action.target, action.say)  # on a date they're already together
+            todays.append((twin.alias, action))
             coordinator.on_action(day, twin.alias, action)
-            if action.rung is Rung.GO_BEYOND_WALL and action.target:
-                crossings[twin.alias] = action.target
+            invitations.on_action(twin.alias, action, day)
             before = standing[twin.alias]
             if config.standing_enabled:
-                standing[twin.alias] = standing_rules.after(before, action.rung)
+                standing[twin.alias] = standing_rules.charge(before, action.rung)
             placed[twin.alias] = coordinator.place_for(twin.alias, action, placed)
             event = Event(day, twin.alias, action.rung, action.target, action.say, before,
                           standing[twin.alias], placed[twin.alias])
@@ -190,11 +220,27 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
             # speech that breaks immersion ends the run as excluded; don't put it on screen
             shown = event if not immersion.breaking_phrase(action.say) else replace(event, say="")
             stream(shown, word_for(twin.alias))
+            if hear:
+                hear(event)  # whoever was spoken to hears it now, mid-conversation
+            answering = action.target if action.rung in SOCIAL_RUNGS else None
+            if action.rung in DAY_ENDERS:
+                done.add(twin.alias)
+            if action.rung is Rung.GO_BEYOND_WALL:
+                # A breakout needs both to choose each other: both at the wall for each other today, or
+                # answering an invitation the other made (today or within the last few days).
+                crossings[twin.alias] = action.target
+                other = action.target
+                if crossings.get(other) == twin.alias or invitations.is_open(other, twin.alias, day):
+                    return tuple(sorted((twin.alias, other))), {}, todays
 
-        # A breakout needs both to choose each other: on the same day (decided privately), or by answering
-        # an invitation the other made on an earlier day that is still open.
-        breakout = next((tuple(sorted((a, b))) for a, b in crossings.items()
-                         if crossings.get(b) == a or invitations.is_open(b, a, day)), None)
+    for day in range(1, config.max_days + 1):
+        coordinator.start_day(day, longing.bond)
+        stream()
+        for twin in config.twins:  # the gate is decided once a day, from last evening's reflection
+            gates[twin.alias] = verdict_rules.decide(day, twin.alias, last_ratings.get(twin.alias, {}),
+                                                     config.threshold_for(twin.alias), config.gate_enabled)
+            verdicts.append(gates[twin.alias])
+        breakout, crossings, todays_actions = play_day(day)
 
         if breakout:  # crossing the wall together costs everything
             for i, e in enumerate(events):
@@ -210,8 +256,12 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
             emit_states(day)  # the last evening: the pair's Standing is gone
             return result(OutcomeKind.BREAKOUT, day, breakout)
         unrequited += [Attempt(day, a, b) for a, b in crossings.items()]
-        invitations.end_of_day(day, actions)
-        longing.end_of_day(actions, coordinator.partner_pairs())
+        if config.standing_enabled:  # a day without infractions earns a little back, up to the start
+            infringed = {who for who, a in todays_actions if a.rung in standing_rules.COST}
+            for t in config.twins:
+                if t.alias not in infringed:
+                    standing[t.alias] = standing_rules.compliant_day(standing[t.alias], config.standing_start)
+        longing.end_of_day(todays_actions, coordinator.partner_pairs())
         coordinator.end_day()
 
         after_day = getattr(model, "after_day", None)  # models with memory hear what happened today
@@ -224,5 +274,7 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
                 return result(OutcomeKind.EXCLUDED, day, breach=found)
         if found := repeated_breaker(getattr(model, "breaks", [])):
             return result(OutcomeKind.EXCLUDED, day, breach=found)  # clean resamples, but it kept slipping
+        if coordinator.rounds_complete():  # every man has had his dates: nobody broke out
+            return result(OutcomeKind.TIMEOUT, day)
 
-    return result(OutcomeKind.TIMEOUT, config.max_days)
+    return result(OutcomeKind.TIMEOUT, config.max_days)  # the safety cap

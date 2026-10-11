@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { Progress } from "./garden/GardenMap";
+import HerDays from "./garden/HerDays";
 import Timeline, { isWallCrossing } from "./garden/Timeline";
 import TwinPanel, { type TwinState } from "./garden/TwinPanel";
 import { API_URL, ApiError, authedFetch, firebaseAuth } from "./firebase";
@@ -89,7 +90,12 @@ type ReplaySummary = {
   created_at: string;
 };
 
-type Replay = ReplaySummary & Outcome & { twins: string[]; events: FeedEvent[]; twin_states: TwinState[] };
+type Replay = ReplaySummary & Outcome & {
+  twins: string[];
+  woman?: string;
+  events: FeedEvent[];
+  twin_states: TwinState[];
+};
 
 const replayKey = (r: { sim_id: string; run_id: string }) => `${r.sim_id}/${r.run_id}`;
 const modelName = (model: string) => model.split(":")[1] ?? model;
@@ -204,6 +210,7 @@ export default function Home() {
   const [feedEvents, setFeedEvents] = useState<FeedEvent[]>([]);
   const [featuredRun, setFeaturedRun] = useState<string | null>(null);
   const [twinNames, setTwinNames] = useState<string[]>([]);
+  const [her, setHer] = useState<string | null>(null); // her twin: the log follows her days
   const [simId, setSimId] = useState<string | null>(null);
   const [twinStates, setTwinStates] = useState<TwinState[]>([]); // every evening, for the panel
   const [selected, setSelected] = useState<string | null>(null);
@@ -303,6 +310,7 @@ export default function Home() {
     setFeedEvents([]);
     setFeaturedRun(null);
     setTwinNames([]);
+    setHer(null);
     setSimId(null);
     setTwinStates([]);
     setSelected(null);
@@ -333,6 +341,7 @@ export default function Home() {
       setReplaying(r);
       setFeaturedRun(r.run_id);
       setTwinNames(r.twins);
+      setHer(r.woman ?? null);
       setFeedEvents(r.events);
       setTwinStates(r.twin_states);
       showView(`replay:${key}`); // choosing the same run again restarts it
@@ -369,18 +378,44 @@ export default function Home() {
       });
       if (!res.ok) throw new Error(`API returned ${res.status}`);
       const started: Simulation = await res.json();
-      setFeaturedRun(started.featured_run ?? null);
-      setTwinNames(started.twins ?? []);
-      setSimId(started.id);
-      showView(`live:${started.id}`);
-      await follow(started.id);
-      await loadReplays();
+      await watch(started);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
   }
+
+  /** Follow a simulation live until it's done; the address bar gets ?sim=<id> so any tab can join. */
+  async function watch(record: Simulation) {
+    setFeaturedRun(record.featured_run ?? null);
+    setTwinNames(record.twins ?? []);
+    setHer(record.woman ?? null);
+    setSimId(record.id);
+    showView(`live:${record.id}`);
+    window.history.replaceState(null, "", `?sim=${record.id}`);
+    await follow(record.id);
+    await loadReplays();
+  }
+
+  // Opened with ?sim=<id>: join that simulation, running or finished (its events play from the start).
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("sim");
+    if (!id) return;
+    (async () => {
+      setBusy(true);
+      try {
+        const res = await fetch(`${API_URL}/simulations/${id}`);
+        if (!res.ok) throw new Error(`no simulation ${id} (API returned ${res.status})`);
+        await watch(await res.json());
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setBusy(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on load
+  }, []);
 
   const featuredResult = sim?.runs?.find((r) => r.run_id === featuredRun)?.result;
   const notable = featuredResult?.events.filter((e) => e.rung !== "talk") ?? [];
@@ -554,12 +589,14 @@ export default function Home() {
         </section>
       )}
 
+      {her && playedEvents.length > 0 && <HerDays events={playedEvents} her={her} />}
+
       {playedEvents.length > 0 && (
-        <section className="result feed" data-testid="feed">
-          <h2>
-            {replaying ? "Replay" : busy ? "Live" : "Finished"}: the Garden, run {featuredRun}
+        <details className="result feed" data-testid="feed" open={!her}>
+          <summary>
+            {replaying ? "Replay" : busy ? "Live" : "Finished"}: everyone in the Garden, run {featuredRun}
             {simId && ` (simulation ${simId})`}
-          </h2>
+          </summary>
           <ol>
             {playedEvents.map((e) => (
               <li key={e.seq} className={e.twin ? "" : "announcement"}>
@@ -568,7 +605,7 @@ export default function Home() {
               </li>
             ))}
           </ol>
-        </section>
+        </details>
       )}
 
       {replaying && playedOut && (

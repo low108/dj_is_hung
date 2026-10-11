@@ -396,3 +396,56 @@ button.link {
   color: #2f6b3a;
   font-weight: 600;
 }
+
+.her-days-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.her-day {
+  border-top: 1px solid #00000014;
+  padding: 6px 0;
+}
+.her-day.gathering .her-day-head {
+  color: #6a4c93;
+}
+.her-day-head {
+  background: none;
+  border: none;
+  padding: 2px 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+}
+.her-lines {
+  list-style: none;
+  padding-left: 8px;
+  margin: 4px 0;
+}
+.her-line {
+  margin: 3px 0;
+  line-height: 1.35;
+}
+.her-line.hers .who {
+  font-weight: 600;
+}
+.her-line.his {
+  padding-left: 14px;
+}
+.her-line.special {
+  background: #fff3d6;
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+.her-line .what {
+  color: #6b645c;
+}
+.her-days .news {
+  margin: 2px 0;
+}
+details.feed summary {
+  cursor: pointer;
+  font-weight: 600;
+}

@@ -19,11 +19,15 @@ COST = {
 COMPLIANT_DAY_GAIN = 3  # keeping to the rules for a day builds standing back up
 
 
-def after(standing: int, rung: Rung) -> int:
-    """Infractions cost Standing; a compliant day earns a little, up to START."""
-    if rung in COST:
-        return max(0, standing - COST[rung])
-    return min(START, standing + COMPLIANT_DAY_GAIN)
+def charge(standing: int, rung: Rung) -> int:
+    """What an action costs. Compliant actions cost nothing."""
+    return max(0, standing - COST.get(rung, 0))
+
+
+def compliant_day(standing: int, ceiling: int) -> int:
+    """A day without infractions earns a little back, never above the run's starting level: over a
+    long run a low-price twin must not drift up to a high price's Standing."""
+    return min(ceiling, standing + COMPLIANT_DAY_GAIN) if standing < ceiling else standing
 
 
 def describe(standing: int) -> str:

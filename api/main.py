@@ -40,7 +40,7 @@ class StartSimulation(BaseModel):
     models: list[str] = demo.FAKE_MODELS  # scripted stand-ins; [demo.ENSEMBLE_ALIAS] = the real ensemble
     prices: list[PriceLevel] = list(PriceLevel)
     seeds: list[int] = [0, 1]
-    max_days: int = 10
+    max_days: int | None = None  # a safety cap; a run ends when every man has had his dates (or a breakout)
     pool_iid: int | None = None  # a real speed-dating woman (see GET /pools); None = placeholder demo pool
     my_twin: bool = False  # the signed-in user's own twin as the woman, with the demo pool's men (D4)
     background: bool = False  # True: return at once and stream the featured run's events (the web app)
@@ -156,10 +156,11 @@ def create_app(store: Store | None = None, log_runs: bool = False,
         featured = featured_spec(specs)
         record["featured_run"] = featured.run_id if featured else None
         record["twins"] = [t.alias for t in twins]  # the viewer places sprites before any event arrives
+        record["woman"] = woman  # whose days the viewer follows
         app.state.store.save(sim_id, record)
         store = app.state.store
 
-        info = replay.SimulationInfo(sim_id, record["twins"],
+        info = replay.SimulationInfo(sim_id, record["twins"], woman,
                                      scenario=req.scenario if all(demo.is_fake(m) for m in models) else None,
                                      featured_run=record["featured_run"], created_at=record["created_at"])
 
@@ -205,7 +206,8 @@ def create_app(store: Store | None = None, log_runs: bool = False,
             sim = run_simulation(specs, twins,
                                  lambda spec: demo.make_twin_model(spec, personas, fake_scenario=req.scenario, woman=woman),
                                  observe=lambda spec: recorders[spec.run_id].observer,
-                                 on_finished=save_replay, max_days=req.max_days, thresholds=pool.thresholds)
+                                 on_finished=save_replay, thresholds=pool.thresholds,
+                                 **({"max_days": req.max_days} if req.max_days else {}))
             done = record | {"status": "done", "pool_iid": req.pool_iid, "my_twin": req.my_twin,
                              **serialize_simulation(sim, pool, highlight_model())}
             if app.state.log_runs:

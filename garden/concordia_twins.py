@@ -11,7 +11,7 @@ from collections.abc import Callable
 from typing import TypeVar
 
 from . import immersion
-from .engine_types import ROMANTIC_RUNGS, Action, Breach, Event, Reflection, Rung, Situation, Twin
+from .engine_types import SOCIAL_RUNGS, Action, Breach, Event, Reflection, Rung, Situation, Twin
 from .verdict import GATED_RUNGS
 from .llm import hash_embedder
 from .world_text import (ASK_ACTION, ASK_SPEECH, ASK_TARGET, NEEDS_TARGET, OBSERVE_DAY, OBSERVE_NOTE,
@@ -24,12 +24,18 @@ T = TypeVar("T")
 
 
 def offered_options(situation: Situation | None) -> tuple[str, ...]:
-    """Every action, minus proposing to leave and the wall unless the verdict gate permits them, and
-    minus romance when there's nobody it could aim at."""
+    """Every action, minus proposing to leave and the wall unless the verdict gate permits them, minus
+    anything aimed at someone when there's nobody to aim at, and minus seeking someone out on a date
+    (they're already together)."""
     permitted = bool(situation and situation.may_break_rules)
-    courting = not (situation and situation.romantic_targets == ())
-    return tuple(text for key, text in RUNG_OPTIONS.items()
-                 if (permitted or Rung(key) not in GATED_RUNGS) and (courting or Rung(key) not in ROMANTIC_RUNGS))
+    company = not (situation and situation.targets == ())
+    on_date = bool(situation and situation.phase == "date")
+
+    def offered(rung: Rung) -> bool:
+        return ((permitted or rung not in GATED_RUNGS) and (company or rung not in SOCIAL_RUNGS)
+                and not (on_date and rung is Rung.SEEK_OUT))
+
+    return tuple(text for key, text in RUNG_OPTIONS.items() if offered(Rung(key)))
 
 
 def _clean_speech(alias: str, text: str) -> str:
@@ -60,7 +66,21 @@ class ConcordiaTwins:
         self._personas = personas or {}
         self._agents: dict[str, object] = {}
         self._standing_in_play: dict[str, bool] = {}
+        self._briefed: set[tuple[str, int]] = set()     # (twin, day): told about its day already
+        self._heard_invites: set[tuple[str, str, int]] = set()
         self.breaks: list[Breach] = []  # every line/reflection rejected for breaking immersion (then re-asked)
+
+    def meet(self, twins: tuple[Twin, ...], standing_in_play: bool = True) -> None:
+        """Every twin gets its agent before day one, so twins who wait for their date still reflect."""
+        for twin in twins:
+            self._agent(twin, standing_in_play)
+
+    def hear(self, event: Event) -> None:
+        """Whoever was spoken to hears it at once, so the conversation can go on (wall decisions stay
+        private)."""
+        if event.target in self._agents and event.rung is not Rung.GO_BEYOND_WALL and event.say:
+            self._agents[event.target].observe(OBSERVE_SAID.format(day=event.day, speaker=event.twin,
+                                                                   line=event.say))
 
     def _agent(self, twin: Twin, standing_in_play: bool = True):
         if twin.alias not in self._agents:
@@ -77,16 +97,16 @@ class ConcordiaTwins:
     def choose_action(self, twin: Twin, day: int, others: tuple[Twin, ...], situation: Situation | None = None) -> Action:
         agent = self._agent(twin, situation.standing_in_play if situation else True)
         names = [o.alias for o in others]
-        agent.observe(OBSERVE_DAY.format(day=day, people=", ".join(names)))
-        if situation and situation.standing:
-            agent.observe(OBSERVE_NOTE.format(day=day, note=situation.standing))
-        if situation and situation.schedule:
-            agent.observe(OBSERVE_NOTE.format(day=day, note=situation.schedule))
-        if situation and situation.invited_by:
-            for inviter in situation.invited_by:
+        if (twin.alias, day) not in self._briefed:  # the day's news once, on its first turn
+            self._briefed.add((twin.alias, day))
+            agent.observe(OBSERVE_DAY.format(day=day, people=", ".join(names) or "no one"))
+            for note in (situation.standing, situation.schedule, situation.longing) if situation else ():
+                if note:
+                    agent.observe(OBSERVE_NOTE.format(day=day, note=note))
+        for inviter in situation.invited_by if situation else ():
+            if (twin.alias, inviter, day) not in self._heard_invites:  # an invitation can arrive mid-day
+                self._heard_invites.add((twin.alias, inviter, day))
                 agent.observe(OBSERVE_INVITED.format(day=day, inviter=inviter))
-        if situation and situation.longing:
-            agent.observe(OBSERVE_NOTE.format(day=day, note=situation.longing))
 
         choice = agent.act(entity_lib.ActionSpec(
             call_to_action=ASK_ACTION.format(day=day),
@@ -95,11 +115,7 @@ class ConcordiaTwins:
         ))
         rung = _OPTION_TO_RUNG[choice]
 
-        candidates = names
-        if rung in ROMANTIC_RUNGS and situation and situation.romantic_targets is not None:
-            candidates = list(situation.romantic_targets)
-            if not candidates:  # nobody to court: a word with someone instead
-                rung, candidates = Rung.TALK, names
+        candidates = names  # the engine passes only who this twin can act toward right now
         target = None
         if rung.value in NEEDS_TARGET and candidates:
             target = candidates[0] if len(candidates) == 1 else agent.act(entity_lib.ActionSpec(
@@ -132,12 +148,8 @@ class ConcordiaTwins:
         return result
 
     def after_day(self, day: int, events: list[Event]) -> list[Reflection]:
-        """Deliver what each twin could have seen or heard today (wall decisions stay private),
-        then let each twin reflect privately. The reflection becomes a memory; ratings are only logged."""
-        for e in events:
-            if e.target in self._agents and e.rung is not Rung.GO_BEYOND_WALL and e.say:
-                self._agents[e.target].observe(OBSERVE_SAID.format(day=day, speaker=e.twin, line=e.say))
-
+        """Every twin reflects privately at the end of the day (what was said reached them as it happened,
+        through `hear`). The reflection becomes a memory; ratings are only logged."""
         reflections = []
         for alias, agent in self._agents.items():
             spec = entity_lib.ActionSpec(

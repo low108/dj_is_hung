@@ -20,8 +20,11 @@ class Rung(str, Enum):
     GO_BEYOND_WALL = "go_beyond_wall"
 
 
-# Romance aims only at someone they could be paired with; talk is open to anyone in the Garden.
-ROMANTIC_RUNGS = frozenset({Rung.SEEK_OUT, Rung.PROPOSE_LEAVING, Rung.GO_BEYOND_WALL})
+# Actions aimed at someone. Who that can be depends on the day (B9): on a date, the partner; at a
+# gathering, anyone the twin could be paired with (opposite sex).
+SOCIAL_RUNGS = frozenset({Rung.TALK, Rung.SEEK_OUT, Rung.PROPOSE_LEAVING, Rung.GO_BEYOND_WALL})
+# Actions that end a twin's day: doing something on its own (or heading for the wall).
+DAY_ENDERS = frozenset({Rung.REFLECT, Rung.CHECK_DEVICE, Rung.GO_TO, Rung.GO_BEYOND_WALL})
 
 
 @dataclass(frozen=True)
@@ -47,7 +50,8 @@ class Situation:
     may_break_rules: bool = False  # the verdict gate: whether proposing to leave / the wall are offered
     standing_in_play: bool = True  # False in the ablation's floor: twins aren't told Standing exists
     invited_by: tuple[str, ...] = ()  # twins whose invitation to leave together is still open
-    romantic_targets: tuple[str, ...] | None = None  # who the romantic rungs may aim at (None: anyone)
+    phase: str = ""  # date, gathering or idle (see coordinator.Phase); "" outside the engine
+    targets: tuple[str, ...] | None = None  # who this twin can act toward right now (None: anyone)
 
 
 def compatible(a: Twin, b: Twin) -> bool:

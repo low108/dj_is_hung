@@ -13,9 +13,9 @@ from garden.feed import SCHEMA, FeedCursor, validate
 WORLD = (Twin("Mara", "f"), Twin("Ren", "m"), Twin("Jun", "m"))
 
 
-def collect(script, days=4, **config):
+def collect(script, days=4, world=WORLD, **config):
     cursor, out = FeedCursor("r00"), []
-    run_world(WorldConfig(WORLD, max_days=days, seed=1, **config), ScriptedModel(script),
+    run_world(WorldConfig(world, max_days=days, seed=1, **config), ScriptedModel(script),
               lambda item, word: out.append(cursor(item, word).to_dict()))
     return out
 
@@ -29,9 +29,9 @@ def test_every_feed_event_matches_the_contract():
 
 
 def test_feed_lines_read_like_sentences():
-    feed = collect({("Mara", 2): Action(Rung.SEEK_OUT, "Ren")})
+    feed = collect({("Mara", 2): Action(Rung.TALK, "Ren", "Hi.")}, world=WORLD[:2])
     line = next(e["line"] for e in feed if e["twin"] == "Mara" and e["day"] == 2)
-    assert line.startswith("Day 2: Mara sought out Ren ") and line.endswith(".")
+    assert line.startswith("Day 2: Mara talked with Ren ") and line.endswith(".")
     assert any(e["announcement_kind"] == "paired" for e in feed)
 
 

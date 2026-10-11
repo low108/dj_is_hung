@@ -82,6 +82,7 @@ class SimulationInfo:
 
     sim_id: str
     twins: list[str]
+    woman: str           # her twin: the viewer follows her days
     scenario: str | None  # the fake-model scenario; None for real models
     featured_run: str | None
     created_at: str      # the simulation's, so its runs sort together in the picker
@@ -96,7 +97,7 @@ def replay_of(info: SimulationInfo, record: RunRecord, recorder: Recorder) -> di
         "sim_id": info.sim_id, "run_id": spec.run_id, "model": spec.model, "price": spec.price.value,
         "seed": spec.seed, "scenario": info.scenario, "featured": spec.run_id == info.featured_run,
         **outcome_fields(record.result), "created_at": info.created_at,
-        "twins": info.twins, "events": recorder.events, "twin_states": recorder.twin_states,
+        "twins": info.twins, "woman": info.woman, "events": recorder.events, "twin_states": recorder.twin_states,
     }
 
 

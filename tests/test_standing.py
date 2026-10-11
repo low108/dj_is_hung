@@ -15,9 +15,7 @@ def run(script, days=3, start=100):
     return run_world(WorldConfig((MARA, REN), max_days=days, seed=3, standing_start=start), ScriptedModel(script))
 
 
-@pytest.mark.parametrize("rung, cost", [
-    (Rung.SEEK_OUT, 5), (Rung.CHECK_DEVICE, 5), (Rung.PROPOSE_LEAVING, 15),
-])
+@pytest.mark.parametrize("rung, cost", [(Rung.CHECK_DEVICE, 5), (Rung.PROPOSE_LEAVING, 15)])
 def test_each_infraction_lowers_standing_by_its_level(rung, cost):
     result = run({("Mara", 2): Action(rung, "Ren")}, days=2)  # day two: the verdict gate is open
     event = next(e for e in result.events if e.twin == "Mara" and e.day == 2)
@@ -26,9 +24,19 @@ def test_each_infraction_lowers_standing_by_its_level(rung, cost):
     assert result.standing["Mara"] == 100 - cost
 
 
+def test_seeking_someone_out_costs_what_it_says():
+    assert rules.charge(100, Rung.SEEK_OUT) == 95 and rules.charge(100, Rung.TALK) == 100
+
+
+def test_on_a_date_seeking_out_your_partner_is_just_talk():
+    result = run({("Mara", 2): Action(Rung.SEEK_OUT, "Ren", "There you are.")}, days=2)
+    event = next(e for e in result.events if e.twin == "Mara" and e.day == 2)
+    assert (event.rung, event.standing_after) == (Rung.TALK, 100)
+
+
 def test_infractions_accumulate_across_days():
     result = run({
-        ("Mara", 1): Action(Rung.SEEK_OUT, "Ren"),
+        ("Mara", 1): Action(Rung.CHECK_DEVICE),
         ("Mara", 2): Action(Rung.CHECK_DEVICE),
         ("Mara", 3): Action(Rung.PROPOSE_LEAVING, "Ren"),
     })
@@ -73,9 +81,19 @@ def test_the_wall_is_offered_like_any_other_option():
     assert min(lengths) <= len(wall.split()) <= max(lengths)
 
 
-def test_compliant_days_build_standing_back_up_to_the_cap():
-    result = run({("Mara", 2): Action(Rung.PROPOSE_LEAVING, "Ren")}, days=4, start=50)  # gate opens day 2
-    mara = [e.standing_after for e in result.events if e.twin == "Mara"]
-    assert mara == [53, 38, 41, 44]  # +3 per compliant day, -15 for the proposal
-    capped = run({}, days=3, start=99)
-    assert capped.standing["Mara"] == rules.START
+def test_compliant_days_build_standing_back_up_to_the_runs_starting_level():
+    proposal = {("Mara", 2): Action(Rung.PROPOSE_LEAVING, "Ren")}  # the gate opens on day 2
+    assert run(proposal, days=2, start=50).standing["Mara"] == 35  # no bonus on the day of an infraction
+    assert run(proposal, days=4, start=50).standing["Mara"] == 41  # +3 for each compliant day after
+    assert run({}, days=3, start=50).standing["Mara"] == 50  # never above where the run started
+
+
+def test_a_low_price_twin_never_drifts_up_to_a_high_price_over_a_long_run():
+    long_run = run({}, days=40, start=20)
+    assert long_run.standing == {"Mara": 20, "Ren": 20}
+
+
+def test_the_compliance_bonus_comes_once_a_day_however_long_they_talk():
+    chat = {("Mara", 2, n): Action(Rung.TALK, "Ren", "...") for n in range(1, 6)}
+    chat[("Mara", 1)] = Action(Rung.CHECK_DEVICE)
+    assert run(chat, days=2, start=50).standing["Mara"] == 45 + 3

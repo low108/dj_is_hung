@@ -55,7 +55,7 @@ def test_one_failed_run_does_not_sink_the_simulation():
 
 
 def test_one_start_simulation_produces_12_run_results():
-    body = TestClient(create_app(MemoryStore())).post("/simulations", json={"max_days": 4}).json()
+    body = TestClient(create_app(MemoryStore())).post("/simulations", json={}).json()
     assert body["status"] == "done" and body["runs_planned"] == 12
     assert len(body["runs"]) == 12 and body["wall_seconds"] >= 0
     assert {(r["price"], r["seed"]) for r in body["runs"]} == {("low", 0), ("low", 1), ("high", 0), ("high", 1)}

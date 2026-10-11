@@ -39,6 +39,9 @@ def test_a_bonded_pair_is_cut_short_and_she_is_next_paired_with_someone_she_is_n
     for _ in range(SHORT[1]):
         c.end_day()
     c.start_day(5, bond)
+    assert c.gathering_today and c.partner_of("Mara") is None  # the date is over: everyone gathers
+    c.end_day()
+    c.start_day(6, bond)
     assert c.partner_of("Mara") not in (None, first)  # separated from the one she bonded with
 
 
@@ -48,19 +51,41 @@ def test_an_unbonded_new_pair_gets_a_long_duration():
     assert LONG[0] <= c.assignment_of("Mara").days_left <= LONG[1]
 
 
-def test_gatherings_happen():
-    days = 0
-    for seed in range(20):
-        c = Coordinator(WORLD, Random(seed))
-        c.start_day(1, {})
-        days += c.gathering_today
-    assert 2 <= days <= 12  # about 30% of days
+def test_a_gathering_follows_a_date_and_the_next_date_comes_after_it():
+    c = Coordinator(WORLD, Random(0))
+    c.start_day(1, {})
+    first = c.partner_of("Mara")
+    assert not c.gathering_today and c.phase_of("Mara").value == "date"
+    c.assignment_of("Mara").days_left = 0
+    c.start_day(2, {})
+    assert c.gathering_today and all(c.phase_of(t.alias).value == "gathering" for t in WORLD)
+    c.end_day()
+    c.start_day(3, {})
+    assert not c.gathering_today and c.partner_of("Mara") not in (None, first)  # least-dated first
+    idle = [m.alias for m in MEN if c.partner_of(m.alias) is None]
+    assert len(idle) == len(MEN) - 1 and all(c.phase_of(m).value == "idle" for m in idle)
+
+
+def test_every_man_is_dated_before_anyone_gets_a_second_date():
+    c = Coordinator(WORLD, Random(4))
+    partners = []
+    for day in range(1, 60):
+        c.start_day(day, {})
+        if (p := c.partner_of("Mara")) and (not partners or partners[-1] != p):
+            partners.append(p)
+        c.end_day()
+        if c.rounds_complete():
+            break
+    assert sorted(partners[:5]) == sorted(m.alias for m in MEN) and sorted(partners[5:]) == sorted(partners[:5])
+    assert c.rounds_complete()
 
 
 def test_the_same_seed_gives_the_same_assignments_and_announcements():
-    model = ScriptedModel({("Mara", 2): Action(Rung.CHECK_DEVICE)})
-    a = run_world(WorldConfig(WORLD, max_days=6, seed=9), model)
-    b = run_world(WorldConfig(WORLD, max_days=6, seed=9), model)
+    def model():
+        return ScriptedModel({("Mara", 2): Action(Rung.CHECK_DEVICE)})
+
+    a = run_world(WorldConfig(WORLD, max_days=6, seed=9), model())
+    b = run_world(WorldConfig(WORLD, max_days=6, seed=9), model())
     assert a.announcements == b.announcements
     assert [e.place for e in a.events] == [e.place for e in b.events]
 
@@ -106,22 +131,20 @@ def _pairings(result, who="Mara"):
     return out
 
 
-def test_through_runs_a_twin_she_bonded_with_is_not_paired_with_her_again():
-    for seed in range(50):
-        # Mara seeks out Ren every day; everyone else keeps to themselves, so only Mara and Ren bond.
-        quiet = {(m.alias, d): Action(Rung.REFLECT) for m in MEN for d in range(1, 13)}
-        model = ScriptedModel(quiet | {("Mara", d): Action(Rung.SEEK_OUT, "Ren") for d in range(1, 13)})
-        result = run_world(WorldConfig(WORLD, max_days=12, seed=seed), model)
-        bonded_from = 3  # two days of seeking out = bond 2 (BONDED)
-        later = [partner for day, partner in _pairings(result) if day > bonded_from]
-        assert "Ren" not in later, (seed, _pairings(result))
+def test_through_runs_a_man_she_bonded_with_waits_until_everyone_else_has_had_as_many_dates():
+    for seed in range(30):
+        # Mara talks with whoever she's with; only her bond with her first partner is strong enough.
+        result = run_world(WorldConfig(WORLD, seed=seed), ScriptedModel())
+        partners = [partner for _, partner in _pairings(result)]
+        first_round, second_round = partners[:len(MEN)], partners[len(MEN):]
+        assert sorted(first_round) == sorted(second_round) == sorted(m.alias for m in MEN), (seed, partners)
 
 
 def test_through_runs_everyone_is_at_the_hall_on_a_gathering_day():
     model = ScriptedModel({("Ren", d): Action(Rung.REFLECT) for d in range(1, 11)}
                           | {("Jun", d): Action(Rung.GO_TO) for d in range(1, 11)})
     result = run_world(WorldConfig(WORLD, max_days=10, seed=4), model)
-    gathering_days = {a.day for a in result.announcements if "gathering" in a.text}
+    gathering_days = {a.day for a in result.announcements if a.kind == "gathering"}
     assert gathering_days
     for e in result.events:
         if e.day in gathering_days:

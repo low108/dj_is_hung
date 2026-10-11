@@ -29,11 +29,11 @@ class Invitations:
         last = self._open.get((inviter, invitee))
         return last is not None and last >= day
 
-    def end_of_day(self, day: int, actions: dict[str, Action]) -> None:
-        """Today's proposals to leave and lone wall attempts become invitations."""
-        for who, action in actions.items():
-            if action.rung in GATED_RUNGS and action.target:
-                self.invite(who, action.target, day)
+    def on_action(self, who: str, action: Action, day: int) -> None:
+        """A proposal to leave or a lone wall attempt opens an invitation at once, so it can be answered
+        the same day (in the same conversation) or within WINDOW days."""
+        if action.rung in GATED_RUNGS and action.target:
+            self.invite(who, action.target, day)
 
     def inviters_of(self, invitee: str, day: int) -> tuple[str, ...]:
         return tuple(sorted(a for (a, b), last in self._open.items() if b == invitee and last >= day))
