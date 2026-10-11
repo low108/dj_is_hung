@@ -1,7 +1,8 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import TwinPanel, { type TwinState } from "./garden/TwinPanel";
 
 // Phaser touches `window`, so the map only loads in the browser.
 const GardenMap = dynamic(() => import("./garden/GardenMap"), { ssr: false });
@@ -36,7 +37,10 @@ type FeedEvent = {
   emoji: string;
   say: string;
   line: string;
+  announcement: string | null;
 };
+
+const TOAST_MS = 4000;
 
 type Simulation = {
   id: string;
@@ -100,20 +104,52 @@ export default function Home() {
   const [featuredRun, setFeaturedRun] = useState<string | null>(null);
   const [twinNames, setTwinNames] = useState<string[]>([]);
   const [simId, setSimId] = useState<string | null>(null);
+  const [twinStates, setTwinStates] = useState<TwinState[]>([]); // every evening, for the panel
+  const [selected, setSelected] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<{ seq: number; text: string }[]>([]);
+  const [mapDay, setMapDay] = useState({ day: 0, caughtUp: false });
+  const toastTimers = useRef<number[]>([]);
+
+  function clearToasts() {
+    toastTimers.current.forEach((t) => window.clearTimeout(t));
+    toastTimers.current = [];
+    setToasts([]);
+  }
+  useEffect(() => clearToasts, []);
+
+  function toast(event: { seq: number; announcement: string | null }) {
+    if (!event.announcement) return;
+    const item = { seq: event.seq, text: event.announcement };
+    setToasts((old) => [...old, item].slice(-3));
+    toastTimers.current.push(
+      window.setTimeout(() => setToasts((old) => old.filter((t) => t.seq !== item.seq)), TOAST_MS),
+    );
+  }
+
+  // The panel follows the map, not the API: the last evening before the day the map is playing
+  // (or the final evening once playback has caught up with a finished run).
+  function panelState(twin: string): TwinState | undefined {
+    const done = !busy && mapDay.caughtUp;
+    return twinStates
+      .filter((s) => s.twin === twin && (done ? s.day <= mapDay.day : s.day < mapDay.day))
+      .sort((a, b) => b.day - a.day)[0];
+  }
 
   async function follow(id: string) {
     // Poll the featured run's events and the simulation until it's done (Firestore listeners later).
     let after = -1;
     for (;;) {
-      const [eventsRes, simRes] = await Promise.all([
+      const [eventsRes, simRes, twinsRes] = await Promise.all([
         fetch(`${API_URL}/simulations/${id}/events?after=${after}`),
         fetch(`${API_URL}/simulations/${id}`),
+        fetch(`${API_URL}/simulations/${id}/twins`),
       ]);
       const fresh: FeedEvent[] = eventsRes.ok ? await eventsRes.json() : [];
       if (fresh.length) {
         after = fresh[fresh.length - 1].seq;
         setFeedEvents((old) => [...old, ...fresh]);
       }
+      if (twinsRes.ok) setTwinStates(await twinsRes.json());
       if (!simRes.ok) throw new Error(`API returned ${simRes.status} while following the simulation`);
       const current: Simulation = await simRes.json();
       if (current.status === "failed") throw new Error(current.error ?? "the simulation failed");
@@ -133,6 +169,10 @@ export default function Home() {
     setFeaturedRun(null);
     setTwinNames([]);
     setSimId(null);
+    setTwinStates([]);
+    setSelected(null);
+    setMapDay({ day: 0, caughtUp: false });
+    clearToasts();
     try {
       const res = await fetch(`${API_URL}/simulations`, {
         method: "POST",
@@ -206,7 +246,28 @@ export default function Home() {
 
       {twinNames.length > 0 && (
         <section className="result map">
-          <GardenMap key={simId ?? "none"} events={feedEvents} twins={twinNames} />
+          <div className="map-wrap">
+            <GardenMap
+              key={simId ?? "none"}
+              events={feedEvents}
+              twins={twinNames}
+              onSelect={setSelected}
+              onAnnouncement={toast}
+              onProgress={(day, caughtUp) => setMapDay({ day, caughtUp })}
+            />
+            <div className="toasts" aria-live="polite">
+              {toasts.map((t) => (
+                <div key={t.seq} className="toast">
+                  📣 {t.text}
+                </div>
+              ))}
+            </div>
+          </div>
+          {selected ? (
+            <TwinPanel twin={selected} state={panelState(selected)} onClose={() => setSelected(null)} />
+          ) : (
+            <p className="meta">Click a twin to see how they&apos;re doing.</p>
+          )}
         </section>
       )}
 

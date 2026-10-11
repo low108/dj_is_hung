@@ -48,6 +48,15 @@ class Longing:
     def of(self, who: str) -> dict[str, float]:
         return dict(self.level.get(who, {}))
 
+    def hearts(self, who: str) -> dict[str, int]:
+        """Viewer only: 1-3 hearts per person, using the same bands as the words twins hear."""
+        out = {}
+        for name, value in self.of(who).items():
+            n = sum(value >= threshold for threshold, _ in LONGING_WORDS)
+            if n:
+                out[name] = n
+        return out
+
     def describe(self, who: str) -> str:
         """How a twin feels its strongest longing. No numbers, ever."""
         levels = self.of(who)

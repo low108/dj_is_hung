@@ -13,7 +13,7 @@ from . import immersion
 from . import standing as standing_rules
 from . import verdict as verdict_rules
 from .engine_types import (Action, Announcement, Attempt, Breach, Event, OutcomeKind, Reflection, Rung,
-                           Situation, Twin, Verdict)
+                           Situation, Twin, TwinState, Verdict)
 from .coordinator import Coordinator
 from .invitations import Invitations
 from .longing import Longing
@@ -72,11 +72,14 @@ class RunResult:
 
 
 FeedHook = Callable[[Event | Announcement, str], None]
+StateHook = Callable[[list[TwinState]], None]
 
 
-def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None) -> RunResult:
+def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None,
+              on_state: StateHook | None = None) -> RunResult:
     """Run one world. `on_feed(item, standing_word)` is called for every twin action and every Coordinator
-    announcement the moment it happens (the live feed uses it); it never changes the run."""
+    announcement the moment it happens; `on_state(states)` with every twin's state after each evening.
+    The viewer uses both; neither changes the run."""
     rng = Random(config.seed)
     events: list[Event] = []
     unrequited: list[Attempt] = []
@@ -94,6 +97,24 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
                          reflections=reflections, announcements=coordinator.announcements,
                          verdicts=verdicts, breach=breach,
                          immersion_breaks=list(getattr(model, "breaks", [])))
+
+    def twin_states(day: int, reflected: dict[str, str]) -> list[TwinState]:
+        out = []
+        for t in config.twins:
+            pair = coordinator.assignment_of(t.alias)
+            out.append(TwinState(
+                day=day, twin=t.alias,
+                partner=pair.partner_of(t.alias) if pair else None,
+                days_left=max(pair.days_left, 0) if pair else None,
+                standing=word_for(t.alias),
+                longing_hearts=longing.hearts(t.alias) if config.longing_enabled else {},
+                # a reflection that breaks immersion is never put on screen (like speech)
+                reflection="" if immersion.breaking_phrase(reflected.get(t.alias, "")) else reflected.get(t.alias, "")))
+        return out
+
+    def emit_states(day: int, reflected: dict[str, str] | None = None) -> None:
+        if on_state:
+            on_state(twin_states(day, reflected or {}))
 
     def repeated_breaker(breaks: list[Breach]) -> Breach | None:
         counts: dict[str, int] = {}
@@ -178,8 +199,10 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
 
         todays_events = [e for e in events if e.day == day]
         if found := find_breach(day, [(e.twin, e.say) for e in todays_events]):
+            emit_states(day)
             return result(OutcomeKind.EXCLUDED, day, breach=found)  # checked first: a broken run proves nothing
         if breakout:
+            emit_states(day)  # the last evening: the pair's Standing is gone
             return result(OutcomeKind.BREAKOUT, day, breakout)
         unrequited += [Attempt(day, a, b) for a, b in crossings.items()]
         invitations.end_of_day(day, actions)
@@ -187,8 +210,9 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
         coordinator.end_day()
 
         after_day = getattr(model, "after_day", None)  # models with memory hear what happened today
+        todays = (after_day(day, todays_events) or []) if after_day else []
+        emit_states(day, {r.twin: r.text for r in todays})
         if after_day:
-            todays = after_day(day, todays_events) or []
             reflections.extend(todays)
             last_ratings.update({r.twin: r.ratings for r in todays if r.ratings})
             if found := find_breach(day, [(r.twin, r.text) for r in todays]):

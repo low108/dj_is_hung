@@ -111,3 +111,16 @@ class Breach:
     twin: str
     phrase: str
     text: str
+
+
+@dataclass(frozen=True)
+class TwinState:
+    """A twin at the end of a day, for the viewer's side panel only (twins never see this)."""
+
+    day: int
+    twin: str
+    partner: str | None
+    days_left: int | None
+    standing: str               # in words; "" when Standing isn't in play
+    longing_hearts: dict[str, int]  # 0-3 hearts per person they've bonded with
+    reflection: str

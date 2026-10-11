@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import threading
 import uuid
+from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Literal
 
@@ -14,7 +15,7 @@ from pydantic import BaseModel
 from garden import demo, feed
 from garden import pools as pool_lib
 from garden import speed_dating as sd
-from garden.batch import PriceLevel, RunSpec, Simulation, featured_spec, plan, run_simulation
+from garden.batch import Observer, PriceLevel, RunSpec, Simulation, featured_spec, plan, run_simulation
 from garden.runlog import write_simulation
 from garden.scoring import score
 
@@ -130,9 +131,11 @@ def create_app(store: SimulationStore | None = None, log_runs: bool = False) -> 
         app.state.store.save(sim_id, record)
         store = app.state.store
 
-        def stream(spec: RunSpec):
+        def stream(spec: RunSpec) -> Observer:
             cursor = feed.FeedCursor(spec.run_id)
-            return lambda item, word: store.add_events(sim_id, [cursor(item, word).to_dict()])
+            return Observer(
+                on_feed=lambda item, word: store.add_events(sim_id, [cursor(item, word).to_dict()]),
+                on_state=lambda states: store.save_twin_states(sim_id, [asdict(s) for s in states]))
 
         def run() -> dict:
             try:
@@ -167,6 +170,15 @@ def create_app(store: SimulationStore | None = None, log_runs: bool = False) -> 
         if app.state.store.get(sim_id) is None:
             raise HTTPException(404, "simulation not found")
         return app.state.store.events(sim_id, after)
+
+    @app.get("/simulations/{sim_id}/twins")
+    def get_twins(sim_id: str) -> list[dict]:
+        """Every evening's snapshot of every twin in the featured run (partner, time left, Standing in words,
+        longing as hearts, that evening's reflection), so the side panel can show the evening the map has
+        reached rather than the latest one. For the viewer only."""
+        if app.state.store.get(sim_id) is None:
+            raise HTTPException(404, "simulation not found")
+        return app.state.store.twin_states(sim_id)
 
     @app.get("/simulations/{sim_id}")
     def get_simulation(sim_id: str) -> dict:
