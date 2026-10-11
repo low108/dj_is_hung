@@ -17,8 +17,9 @@ from .world_text import (ASK_ACTION, ASK_AFTER_LINE, ASK_DATE, ASK_GATHERING, AS
                          ASK_TARGET, DATE_OPTIONS, NEEDS_TARGET, OBSERVE_DAY, OBSERVE_NOTE, OBSERVE_INVITED,
                          OBSERVE_REFLECTION, OBSERVE_SAID, RUNG_OPTIONS, SPEAKS, BASE_MEMORIES, STANDING_MEMORIES)
 
-# On a date, the solo actions are one choice: ending the date for today (#62).
-_DATE_SOLO = (Rung.GO_TO, Rung.CHECK_DEVICE)
+# On a date, reflecting and going elsewhere are one choice: ending the date for today (#62). Checking the
+# device stays its own choice: a rule-break (it costs Standing) and the Coordinator re-rolls the date's length.
+_DATE_SOLO = (Rung.GO_TO,)
 RESAMPLES = 2  # extra attempts for a line or reflection that breaks immersion
 T = TypeVar("T")
 
@@ -26,8 +27,8 @@ T = TypeVar("T")
 def options_for(situation: Situation | None) -> dict[str, Rung]:
     """What a twin is offered, as option text -> action: every action, minus proposing to leave and the
     wall until the wall opens, and minus anything aimed at someone when there's nobody to aim at. On a
-    date it's a conversation (#62): keep talking, a move toward the partner, or end the date for today
-    (the solo actions, as one choice); seeking someone out isn't offered (they're already together)."""
+    date it's a conversation (#62): keep talking, a move toward the partner, check the device early, or
+    end the date for today; seeking someone out isn't offered (they're already together)."""
     wall_open = bool(situation and situation.wall_open)
     company = not (situation and situation.targets == ())
     on_date = bool(situation and situation.phase == "date")

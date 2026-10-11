@@ -44,11 +44,23 @@ def test_a_date_question_is_about_the_line_just_said():
     assert '"a {brace}"' in ask_action(Situation(replying_to=("Ren", "a {brace}")), 2).format(name="Mara")
 
 
-def test_on_a_date_the_choices_are_keep_talking_a_move_toward_him_or_end_the_date():
+def test_on_a_date_the_choices_are_talk_a_move_toward_him_check_the_device_or_end_the_date():
     options = offered_options(Situation(phase="date", targets=("Ren",), wall_open=True))
     assert "Keep talking with Ren" in options and "End the date for today and spend some time alone" in options
-    assert not any(o.startswith(("Go somewhere", "Check your Coordinator", "Look for")) for o in options)
+    assert "Check your Coordinator device early" in options
+    assert not any(o.startswith(("Go somewhere", "Look for")) for o in options)
     assert any(o.startswith("Ask someone to leave") for o in options)
+
+
+def test_checking_the_device_on_a_date_is_a_rule_break_and_re_rolls_the_date():
+    # After the opening exchange Mara checks her device: it costs Standing, the Coordinator re-rolls how
+    # long the date has left, and it ends her day.
+    model = Recording({("Mara", 1, 2): Action(Rung.CHECK_DEVICE), ("Ren", 1, 2): Action(Rung.REFLECT)})
+    result = run_world(WorldConfig((MARA, REN), max_days=1, seed=1), model)
+    check = next(e for e in result.events if e.rung is Rung.CHECK_DEVICE)
+    assert check.twin == "Mara" and check.standing_before - check.standing_after == 5
+    assert any(a.kind == "changed" and a.day == 1 for a in result.announcements)
+    assert not any(e.twin == "Mara" for e in result.events[result.events.index(check) + 1:])
 
 
 def test_speech_answers_the_other_and_shares_something_real():
