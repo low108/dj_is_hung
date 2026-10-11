@@ -2,7 +2,7 @@
 
 import type Phaser from "phaser";
 import { useEffect, useRef } from "react";
-import { COLS, GATE, ROWS, TILE, ZONES, isPlace, isWall, spotFor, walkableGrid, type Tile } from "./world";
+import { COLS, GATE, ROWS, TILE, ZONES, isPlace, isWall, spotFor, walkableGrid, type Place, type Tile } from "./world";
 
 /** The fields of a feed event (docs/event-contract.md) that the map uses. */
 export type MapEvent = {
@@ -35,7 +35,9 @@ const COLORS = [0xd1495b, 0x2e86ab, 0xf18f01, 0x6a4c93, 0x3d8361, 0x8d6346, 0x24
 /** The Garden drawn with Phaser. Plays feed events in order through a queue, walking each twin to
  * the place of its action along an EasyStar path; with `catchUp` it hurries through a live backlog.
  * `speed` scales every walk and timer; `paused` freezes playback where it is.
- * Give it a `key` per simulation or replay: each starts with a fresh map, queue and cursor. */
+ * `startAt` begins playback at that seq, with each twin already where the events before it left them.
+ * `finale` (a breakout pair) climbs the gate together once the last event has played.
+ * Give it a `key` per simulation, replay or jump: each starts with a fresh map, queue and cursor. */
 export default function GardenMap({
   events,
   twins,
@@ -45,6 +47,8 @@ export default function GardenMap({
   speed = 1,
   paused = false,
   catchUp = true,
+  startAt = 0,
+  finale = null,
 }: {
   events: MapEvent[];
   twins: string[];
@@ -54,10 +58,13 @@ export default function GardenMap({
   speed?: number;
   paused?: boolean;
   catchUp?: boolean; // live: hurry through a backlog; replay: everything is queued at once, so don't
+  startAt?: number;
+  finale?: [string, string] | null;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const queue = useRef<MapEvent[]>([]);
-  const seen = useRef(-1);
+  const firstSeq = useRef(startAt); // fixed for this map's life (a jump remounts it via `key`)
+  const seen = useRef(firstSeq.current - 1); // events before it only decide where twins begin
   const resumePlayback = useRef<(() => void) | null>(null);
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
@@ -65,7 +72,11 @@ export default function GardenMap({
   onAnnouncementRef.current = onAnnouncement;
   const onProgressRef = useRef(onProgress);
   onProgressRef.current = onProgress;
-  const lastPlayed = useRef({ day: 0, seq: -1 });
+  const lastPlayed = useRef({ day: 0, seq: firstSeq.current - 1 });
+  const eventsRef = useRef(events);
+  eventsRef.current = events;
+  const finaleRef = useRef(finale);
+  finaleRef.current = finale;
   const sceneRef = useRef<Phaser.Scene | null>(null);
   const pausedRef = useRef(paused);
   const speedRef = useRef(speed);
@@ -88,6 +99,11 @@ export default function GardenMap({
       resumePlayback.current?.();
     }
   }, [paused]);
+
+  // A live run's outcome arrives after its last event: if playback is already idle, start the finale.
+  useEffect(() => {
+    if (finale) resumePlayback.current?.();
+  }, [finale]);
 
   // New events join the queue (only ones not seen yet, in seq order).
   useEffect(() => {
@@ -128,8 +144,12 @@ export default function GardenMap({
             g.fillStyle(zone.color).fillRoundedRect(zone.x * TILE, zone.y * TILE, zone.w * TILE, zone.h * TILE, 6);
             this.add.text(zone.x * TILE + 6, zone.y * TILE + 4, zone.label, { fontSize: "11px", color: "#3b3631" });
           }
+          // Where each twin was just before the first event played (home if they hadn't moved yet).
+          const placeBefore = new Map<string, Place>();
+          for (const e of eventsRef.current)
+            if (e.seq < firstSeq.current && e.twin && isPlace(e.place)) placeBefore.set(e.twin, e.place);
           twins.forEach((name, i) => {
-            const at = spotFor("home", i);
+            const at = spotFor(placeBefore.get(name) ?? "home", i);
             const body = this.add.circle(at.col * TILE + TILE / 2, at.row * TILE + TILE / 2, 6, COLORS[i % COLORS.length]);
             const label = this.add.text(0, 0, name, { fontSize: "10px", color: "#1f1d1a" }).setOrigin(0.5, 0);
             const emoji = this.add.text(0, 0, "", { fontSize: "12px" }).setOrigin(0.5, 1);
@@ -164,6 +184,35 @@ export default function GardenMap({
         s.bubble.setPosition(s.body.x, s.body.y - 20);
       }
 
+      let climbed = false;
+
+      /** The breakout scene: the pair meet at the gate, then climb it together and are gone. */
+      function climb(scene: Phaser.Scene, pair: [string, string]) {
+        const both = pair.map((name) => sprites.get(name)).filter((s): s is Sprite => !!s);
+        if (climbed || both.length !== 2) return;
+        climbed = true;
+        busy = true; // nothing else plays after the breakout
+        const midRow = (GATE.rowFrom + GATE.rowTo) / 2;
+        both.forEach((s, i) => {
+          s.emoji.setText("🧱");
+          const row = midRow + (i === 0 ? -0.5 : 0.5); // side by side, hand in hand
+          const atGate = { x: (GATE.col - 1) * TILE + TILE / 2, y: row * TILE + TILE / 2 };
+          scene.tweens.chain({
+            targets: s.body,
+            tweens: [
+              { ...atGate, duration: 1400, ease: "Sine.easeInOut" },
+              { y: atGate.y - TILE * 1.5, x: GATE.col * TILE + TILE / 2, duration: 700, ease: "Quad.easeOut" }, // up
+              { y: atGate.y, x: COLS * TILE + TILE, alpha: 0, duration: 700, ease: "Quad.easeIn" }, // over and out
+            ],
+            onUpdate: () => {
+              attachLabels(s);
+              s.label.setAlpha(s.body.alpha);
+              s.emoji.setAlpha(s.body.alpha);
+            },
+          });
+        });
+      }
+
       function playNext(scene: Phaser.Scene) {
         if (busy || cancelled || pausedRef.current) return;
         // Announcements become toasts at this point in playback; anything else not drawable is skipped.
@@ -179,6 +228,7 @@ export default function GardenMap({
         }
         if (!next || !next.twin || !isPlace(next.place)) {
           onProgressRef.current?.({ ...lastPlayed.current, caughtUp: true });
+          if (finaleRef.current) climb(scene, finaleRef.current);
           return;
         }
         reached(next);
@@ -231,6 +281,7 @@ export default function GardenMap({
         width: COLS * TILE,
         height: ROWS * TILE,
         backgroundColor: "#eef3e6",
+        audio: { noAudio: true }, // silent map; also avoids "closed AudioContext" errors on remount
         scene: Garden,
         scale: { mode: PhaserLib.Scale.FIT, autoCenter: PhaserLib.Scale.CENTER_HORIZONTALLY },
       });

@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import type { Progress } from "./garden/GardenMap";
+import Timeline, { isWallCrossing } from "./garden/Timeline";
 import TwinPanel, { type TwinState } from "./garden/TwinPanel";
 
 // Phaser touches `window`, so the map only loads in the browser.
@@ -35,6 +36,9 @@ type FeedEvent = {
   day: number;
   twin: string | null;
   place: string | null;
+  rung: string | null;
+  target: string | null;
+  announcement_kind: string | null;
   emoji: string;
   say: string;
   line: string;
@@ -93,7 +97,7 @@ type Simulation = {
   error?: string;
   featured_run?: string;
   twins?: string[];
-  runs?: { run_id: string }[];
+  runs?: { run_id: string; result: (Outcome & { events: SimEvent[] }) | null }[];
   wall_seconds?: number;
   ranking?: Ranked[];
   woman?: string;
@@ -150,7 +154,9 @@ export default function Home() {
   const [filter, setFilter] = useState<ReplayFilter>(ANY);
   const replayRequest = useRef(0); // only the latest replay request may fill the view
   const [replaying, setReplaying] = useState<Replay | null>(null);
-  const [viewKey, setViewKey] = useState("none"); // a fresh map per simulation or replay
+  // What the map is showing: a fresh map (React key) per simulation, replay or jump.
+  const [view, setView] = useState({ source: "none", startAt: 0, nonce: 0 });
+  const showView = (source: string, startAt = 0) => setView({ source, startAt, nonce: Date.now() });
   const [speed, setSpeed] = useState(1);
   const [paused, setPaused] = useState(false);
   const toastTimers = useRef<number[]>([]);
@@ -241,8 +247,17 @@ export default function Home() {
     setTwinStates([]);
     setSelected(null);
     setProgress(START);
+    setView({ source: "none", startAt: 0, nonce: 0 });
     setPaused(false);
     clearToasts();
+  }
+
+  /** Restart the map at an event, with everyone where they were just before it. */
+  function jump(seq: number) {
+    clearToasts();
+    setProgress({ day: feedEvents.find((e) => e.seq === seq)?.day ?? 0, seq: seq - 1, caughtUp: false });
+    setPaused(false);
+    showView(view.source, seq);
   }
 
   /** Plays a saved run from its stored events: nothing is simulated and no model is called. */
@@ -260,7 +275,7 @@ export default function Home() {
       setTwinNames(r.twins);
       setFeedEvents(r.events);
       setTwinStates(r.twin_states);
-      setViewKey(`replay:${key}:${Date.now()}`); // choosing the same run again restarts it
+      showView(`replay:${key}`); // choosing the same run again restarts it
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -294,7 +309,7 @@ export default function Home() {
       setFeaturedRun(started.featured_run ?? null);
       setTwinNames(started.twins ?? []);
       setSimId(started.id);
-      setViewKey(`live:${started.id}`);
+      showView(`live:${started.id}`);
       await follow(started.id);
       await loadReplays();
     } catch (e) {
@@ -304,11 +319,25 @@ export default function Home() {
     }
   }
 
-  const notable = sim?.result?.events.filter((e) => e.rung !== "talk") ?? [];
+  const featuredResult = sim?.runs?.find((r) => r.run_id === featuredRun)?.result;
+  const notable = featuredResult?.events.filter((e) => e.rung !== "talk") ?? [];
   const playedEvents = feedEvents.filter((e) => e.seq <= progress.seq); // the feed follows the map
   // Results wait for the map to finish playing (if there's no map, there's nothing to wait for).
   const playedOut = progress.caughtUp || twinNames.length === 0;
   const shown = replays.filter((r) => matches(r, filter));
+  // How the run on the map ended (live: the featured run's own result, once the simulation is done).
+  const shownOutcome: Outcome | null | undefined = replaying ?? featuredResult;
+  const breakoutPair = shownOutcome?.outcome === "breakout" ? shownOutcome.pair : null;
+  const lastDay = Math.max(shownOutcome?.day ?? 0, ...feedEvents.map((e) => e.day));
+
+  function showBreakout() {
+    if (!breakoutPair || !shownOutcome) return;
+    // The final scene starts at the pair's first wall crossing on the day they broke out.
+    const finalDay = feedEvents.filter((e) => e.day === shownOutcome.day);
+    const crossing = finalDay.find((e) => e.twin && breakoutPair.includes(e.twin) && isWallCrossing(e));
+    const at = crossing ?? finalDay[0];
+    if (at) jump(at.seq);
+  }
 
   return (
     <main className="page">
@@ -405,7 +434,7 @@ export default function Home() {
         <section className="result map">
           <div className="map-wrap">
             <GardenMap
-              key={viewKey}
+              key={`${view.source}#${view.startAt}:${view.nonce}`}
               events={feedEvents}
               twins={twinNames}
               onSelect={setSelected}
@@ -413,7 +442,9 @@ export default function Home() {
               onProgress={setProgress}
               speed={speed}
               paused={paused}
-              catchUp={!replaying}
+              catchUp={!replaying && view.startAt === 0} // after a jump the backlog is history to watch, not lag
+              startAt={view.startAt}
+              finale={breakoutPair}
             />
             <div className="toasts" aria-live="polite">
               {toasts.map((t) => (
@@ -433,7 +464,15 @@ export default function Home() {
               </button>
             ))}
             <span className="meta">Day {progress.day || 1}</span>
+            {breakoutPair && (
+              <button className="breakout" onClick={showBreakout}>
+                Show me the breakout
+              </button>
+            )}
           </div>
+          {feedEvents.length > 0 && (
+            <Timeline events={feedEvents} days={lastDay} atSeq={progress.seq} atDay={progress.day} onJump={jump} />
+          )}
           {selected ? (
             <TwinPanel twin={selected} state={panelState(selected)} onClose={() => setSelected(null)} />
           ) : (
@@ -471,7 +510,7 @@ export default function Home() {
 
       {sim && playedOut && (
         <section className="result" data-testid="result">
-          <h2>{headline(sim.result)}</h2>
+          <h2>{headline(shownOutcome ?? sim.result)}</h2>
           {notable.length > 0 && (
             <ol>
               {notable.map((e, i) => (
