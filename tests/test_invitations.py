@@ -1,6 +1,8 @@
-"""B7: invitations let twins choose each other on different days (B9: or later in the same day)."""
+"""B7: invitations let twins choose each other on different days (B9: or later in the same day). An
+invitation stays open until it is answered or the inviter invites someone else, and asking back counts
+as an answer."""
 from garden import Action, OutcomeKind, Rung, ScriptedModel, Twin, WorldConfig, run_world
-from garden.invitations import WINDOW, Invitations
+from garden.invitations import Invitations
 
 # One woman and one man: they're together every day (on a date, or at the gathering after it).
 COUPLE = (Twin("Mara", "f"), Twin("Ren", "m"))
@@ -26,27 +28,46 @@ def run(script, days=12, world=COUPLE, **config):
     return run_world(WorldConfig(world, max_days=days, seed=2, **({"wall_lock": False} | config)), model), model
 
 
-def test_a_proposal_answered_at_the_wall_within_the_window_is_a_breakout():
+def test_a_proposal_answered_at_the_wall_is_a_breakout():
     result, _ = run({("Ren", 2): Action(LEAVE, "Mara"), ("Mara", 3): Action(WALL, "Ren")})
     assert (result.outcome, result.day, result.pair) == (OutcomeKind.BREAKOUT, 3, ("Mara", "Ren"))
 
 
 def test_a_lone_wall_attempt_waits_for_the_other_twin():
-    result, _ = run({("Mara", 2): Action(WALL, "Ren"), ("Ren", 2 + WINDOW): Action(WALL, "Mara")})
-    assert result.pair == ("Mara", "Ren") and result.day == 2 + WINDOW
+    result, _ = run({("Mara", 2): Action(WALL, "Ren"), ("Ren", 4): Action(WALL, "Mara")})
+    assert result.pair == ("Mara", "Ren") and result.day == 4
     assert [(a.day, a.twin) for a in result.unrequited] == [(2, "Mara")]  # the first attempt is still logged
 
 
-def test_answering_after_the_window_is_not_a_breakout():
-    result, _ = run({("Ren", 2): Action(LEAVE, "Mara"), ("Mara", 3 + WINDOW): Action(WALL, "Ren")})
-    assert result.outcome is OutcomeKind.TIMEOUT
+def test_an_invitation_answered_days_later_is_still_a_breakout():
+    # In live runs a 2-day window expired before he had a turn again; now it waits for the answer.
+    # (The old 2-day window closed after day 4; a lone couple runs out of dates around day 6.)
+    result, _ = run({("Ren", 2): Action(LEAVE, "Mara"), ("Mara", 5): Action(WALL, "Ren")})
+    assert (result.outcome, result.day) == (OutcomeKind.BREAKOUT, 5)
 
 
-def test_the_invited_twin_hears_about_it_while_it_is_open():
+def test_asking_back_answers_an_invitation():
+    result, _ = run({("Ren", 2): Action(LEAVE, "Mara"), ("Mara", 5): Action(LEAVE, "Ren", "Yes. Let's go.")})
+    assert (result.outcome, result.day, result.pair) == (OutcomeKind.BREAKOUT, 5, ("Mara", "Ren"))
+
+
+def test_two_twins_asking_each_other_the_same_day_break_out():
+    # Seed 14 of the live batch: Lina and Amir asked each other on day 25 and nothing happened.
+    result, _ = run({("Ren", 3, 1): Action(LEAVE, "Mara", "Come with me?"), ("Mara", 3, 1): Action(LEAVE, "Ren", "Leave with me?")})
+    assert (result.outcome, result.day) == (OutcomeKind.BREAKOUT, 3)
+
+
+def test_inviting_someone_else_withdraws_the_invitation():
+    world = (*COUPLE, Twin("Ada", "f"))
+    result, _ = run({("Ren", 2): Action(LEAVE, "Mara"), ("Ren", 4): Action(LEAVE, "Ada"),
+                     ("Mara", 6): Action(WALL, "Ren")}, days=7, world=world)
+    assert result.outcome is OutcomeKind.TIMEOUT  # Ren had asked Ada by then
+
+
+def test_the_invited_twin_hears_about_it_until_it_is_answered():
     _, model = run({("Ren", 2, 1): Action(LEAVE, "Mara")}, days=6)
-    for day in range(3, 3 + WINDOW):
+    for day in range(3, 6):
         assert model.seen[("Mara", day)].invited_by == ("Ren",)
-    assert model.seen[("Mara", 3 + WINDOW)].invited_by == ()  # expired
 
 
 def test_an_invitation_reaches_her_the_moment_it_is_made():

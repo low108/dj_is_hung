@@ -118,3 +118,12 @@ def test_ordinary_lines_and_in_world_unease_are_not_slips(text):
 ])
 def test_model_framing_is_stripped_and_the_rest_kept(raw, kept):
     assert strip_framing(raw) == kept
+
+
+@pytest.mark.parametrize("raw,kept", [
+    ("{{ratingstemplate}} Lina's Private Evening Reflection: End of Day 47 The day with Ren B. has ended.",
+     "The day with Ren B. has ended."),
+    ("Here is Lina's private observation for the end of Day 26: The walls feel distant.", "The walls feel distant."),
+])
+def test_more_framing_from_the_live_batch_is_stripped(raw, kept):
+    assert strip_framing(raw) == kept

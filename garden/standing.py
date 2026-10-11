@@ -8,7 +8,7 @@ START = 100
 # What each infraction costs. Compliant actions cost nothing.
 COST = {
     Rung.SEEK_OUT: 5,
-    Rung.CHECK_DEVICE: 5,
+    Rung.CHECK_DEVICE: 15,  # was 5: in live runs it was checked 5-21 times a run, nearly free (priced like a proposal now)
     Rung.PROPOSE_LEAVING: 15,
     # A one-sided wall attempt reveals the intent to leave: priced like a proposal.
     # Actually crossing (both twins together) loses everything, but that ends the run.

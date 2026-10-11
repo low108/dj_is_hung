@@ -60,7 +60,7 @@ def test_checking_the_device_on_a_date_is_a_rule_break_and_re_rolls_the_date():
     model = Recording({("Mara", 1, 2): Action(Rung.CHECK_DEVICE), ("Ren", 1, 2): Action(Rung.REFLECT)})
     result = run_world(WorldConfig((MARA, REN), max_days=1, seed=1), model)
     check = next(e for e in result.events if e.rung is Rung.CHECK_DEVICE)
-    assert check.twin == "Mara" and check.standing_before - check.standing_after == 5
+    assert check.twin == "Mara" and check.standing_before - check.standing_after == 15
     assert any(a.kind == "changed" and a.day == 1 for a in result.announcements)
     assert not any(e.twin == "Mara" for e in result.events[result.events.index(check) + 1:])
 
@@ -286,3 +286,8 @@ def test_a_twin_claiming_another_twins_name_is_asked_again():
     twins.meet((MARA, REN))
     assert twins._claims_another_name("Ren", "Mara—I'm Mara, studying Law.")
     assert not twins._claims_another_name("Ren", "I'm Ren, and you're Mara.")
+
+
+def test_a_speaker_does_not_open_by_naming_itself():
+    assert _clean_speech("Ren B.", "Ren B., don't make me choose.") == "don't make me choose."
+    assert _clean_speech("Lina", "Felix, I missed you.") == "Felix, I missed you."  # naming him is fine

@@ -139,7 +139,7 @@ def _clean_speech(alias: str, text: str) -> str:
             end = text.rfind(quote_close)
             line = text[start + 1 : end if end > start else None]
             return _tidy(re.sub(r"\s+", " ", _NARRATION.sub(" ", line)), MAX_LINE_SENTENCES, MAX_LINE_CHARS)
-    prefixes = ("Answer:", f"{alias} says:", f"{alias} said:", f"{alias}:", f"{alias} ")
+    prefixes = ("Answer:", f"{alias} says:", f"{alias} said:", f"{alias}:", f"{alias},", f"{alias} ")
     stripped = True
     while stripped:  # Concordia adds the name and models often repeat it: 'Theo Theo: Hey'
         stripped = False

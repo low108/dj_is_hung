@@ -245,11 +245,13 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
             answering = action.target if action.rung in SOCIAL_RUNGS else None
             if action.rung in DAY_ENDERS:
                 done.add(twin.alias)
-            if action.rung is Rung.GO_BEYOND_WALL:
+            if action.rung in LEAVING_RUNGS and action.target:
                 # A breakout needs both to choose each other: both at the wall for each other today, or
-                # answering an invitation the other made (today or within the last few days).
-                crossings[twin.alias] = action.target
+                # answering the other's open invitation by going to the wall with them or by asking them
+                # to leave too (two twins asking each other is as mutual as it gets).
                 other = action.target
+                if action.rung is Rung.GO_BEYOND_WALL:
+                    crossings[twin.alias] = other
                 if crossings.get(other) == twin.alias or invitations.is_open(other, twin.alias, day):
                     return tuple(sorted((twin.alias, other))), {}, todays
 

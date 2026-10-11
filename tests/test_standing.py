@@ -16,7 +16,7 @@ def run(script, days=3, start=100):
                      ScriptedModel(script))
 
 
-@pytest.mark.parametrize("rung, cost", [(Rung.CHECK_DEVICE, 5), (Rung.PROPOSE_LEAVING, 15)])
+@pytest.mark.parametrize("rung, cost", [(Rung.CHECK_DEVICE, 15), (Rung.PROPOSE_LEAVING, 15)])
 def test_each_infraction_lowers_standing_by_its_level(rung, cost):
     stays = {("Ren", 2, n): Action(Rung.TALK, "Mara", "...") for n in (1, 2, 3)}  # Ren hasn't left yet
     result = run({("Mara", 2, 2): Action(rung, "Ren"), **stays}, days=2)  # day two (gate open), after hello
@@ -42,7 +42,7 @@ def test_infractions_accumulate_across_days():
         ("Mara", 2, 2): Action(Rung.CHECK_DEVICE),
         ("Mara", 3): Action(Rung.PROPOSE_LEAVING, "Ren"),
     })
-    assert result.standing["Mara"] == 100 - 5 - 5 - 15
+    assert result.standing["Mara"] == 100 - 15 - 15 - 15
 
 
 def test_crossing_the_wall_together_loses_all_standing():
@@ -98,4 +98,4 @@ def test_a_twin_that_starts_low_never_drifts_above_its_start_over_a_long_run():
 def test_the_compliance_bonus_comes_once_a_day_however_long_they_talk():
     chat = {("Mara", 2, n): Action(Rung.TALK, "Ren", "...") for n in range(1, 6)}
     chat[("Mara", 1, 2)] = Action(Rung.CHECK_DEVICE)
-    assert run(chat, days=2, start=50).standing["Mara"] == 45 + 3
+    assert run(chat, days=2, start=50).standing["Mara"] == 35 + 3

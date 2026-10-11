@@ -39,16 +39,18 @@ _FRAMING = (
                r"(?:respond|reply|answer|write|speak)\b[^.:\n]*[.:]\s*", re.IGNORECASE),
     # "Certainly. Here is Lina's private reflection at the end of Day 12:"
     re.compile(r"^\s*(?:(?:sure|okay|ok|certainly|alright|of course)[,!.]?\s*)?(?:here (?:is|are)|here'?s)\b"
-               r"(?:[^.:\n]|(?<= [A-Z])\.){0,80}?\b(?:reflection|response|reply|answer|line|entry|journal)\b"
+               r"(?:[^.:\n]|(?<= [A-Z])\.){0,80}?\b(?:reflection|response|reply|answer|line|entry|journal|"
+               r"observation|note|thoughts)\b"
                r"[^.:\n]*[.:]\s*",  # (an initial's full stop, as in "Ren B.", doesn't end it)
                re.IGNORECASE),
     # Headings: "Lina's Private Reflection for Day 1", "Ravi's Private Journal — End of Day 3", "Private Entry"
     # (a bare word counts only before a day or a colon: "Entry to the hall was closed" stays)
-    re.compile(r"^\s*(?:(?:[A-Z][\w.]*(?: [A-Z]\.)?'s\s+(?:private\s+)?|private\s+)(?:reflection|journal|entry|diary)"
+    re.compile(r"^\s*(?:(?:[A-Z][\w.]*(?: [A-Z]\.)?'s\s+(?:private\s+)?(?:evening\s+|nightly\s+)?|private\s+"
+               r"(?:evening\s+|nightly\s+)?)(?:reflection|journal|entry|diary)"
                r"|(?:reflection|journal|entry|diary)(?=\s*(?:for\s+)?(?:[-—–:]|(?:the\s+)?(?:end of\s+)?day\s+\w)))"
                r"(?:\s*(?:for|[-—–:])?\s*(?:the\s+)?(?:end of\s+)?day\s+\w+)?\s*[-—–:.]?\s*", re.IGNORECASE),
-    # "[day5privatewriting]"
-    re.compile(r"\[[^\]\n]{0,40}\]\s*"),
+    # "[day5privatewriting]", "{{ratingstemplate}}"
+    re.compile(r"\[[^\]\n]{0,40}\]\s*"), re.compile(r"\{\{[^}\n]{0,40}\}\}\s*"),
 )
 
 
