@@ -14,7 +14,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from garden import demo, highlights, replay
+from garden import agreement, demo, highlights, llm, replay
 from garden import twin_builder as tb
 from garden import pools as pool_lib
 from garden import speed_dating as sd
@@ -37,7 +37,7 @@ class StartSimulation(BaseModel):
     """models x price levels x seeds runs. 'fake:*' models are scripted (no API calls)."""
 
     scenario: Literal["breakout", "unrequited", "timeout", "excluded"] = "breakout"  # for fake models
-    models: list[str] = demo.FAKE_MODELS
+    models: list[str] = demo.FAKE_MODELS  # scripted stand-ins; [demo.ENSEMBLE_ALIAS] = the real ensemble
     prices: list[PriceLevel] = list(PriceLevel)
     seeds: list[int] = [0, 1]
     max_days: int = 10
@@ -86,6 +86,8 @@ def serialize_simulation(sim: Simulation, pool: pool_lib.PoolSetup, highlight_mo
     return {"wall_seconds": round(sim.wall_seconds, 2), "runs": runs, "ranking": ranking,
             "scored_runs": len(sim.scorable), "woman": woman, "answer_key": answer_key,
             "highlights": [h.to_dict() for h in picked],
+            "models": sorted({r.spec.model for r in sim.records}),
+            "agreement": [a.to_dict() for a in agreement.agreement(list(sim.records), scores, woman, men)],
             "result": runs[0]["result"] if runs else None}  # first run kept for the single-result page
 
 
@@ -134,7 +136,8 @@ def create_app(store: Store | None = None, log_runs: bool = False,
     @app.post("/simulations", status_code=201)
     def start_simulation(req: StartSimulation, request: Request) -> dict:
         sim_id = uuid.uuid4().hex[:12]
-        specs = plan(req.models, req.prices, req.seeds)
+        models = list(llm.ENSEMBLE) if req.models == [demo.ENSEMBLE_ALIAS] else req.models
+        specs = plan(models, req.prices, req.seeds)
         if req.my_twin:
             pool = demo.with_her_twin(*tb.garden_inputs(twin.reviewed_twin(request, current_user(request))))
         else:
@@ -157,7 +160,7 @@ def create_app(store: Store | None = None, log_runs: bool = False,
         store = app.state.store
 
         info = replay.SimulationInfo(sim_id, record["twins"],
-                                     scenario=req.scenario if all(demo.is_fake(m) for m in req.models) else None,
+                                     scenario=req.scenario if all(demo.is_fake(m) for m in models) else None,
                                      featured_run=record["featured_run"], created_at=record["created_at"])
 
         def stream(events: list[dict], states: list[dict]) -> None:
@@ -192,7 +195,7 @@ def create_app(store: Store | None = None, log_runs: bool = False,
 
         def highlight_model():
             try:
-                return demo.make_highlight_model(req.models)
+                return demo.make_highlight_model(models)
             except (KeyError, ValueError) as e:  # e.g. no API key: template captions instead of no results
                 log.warning("highlights use template captions: %s", e)
                 return None

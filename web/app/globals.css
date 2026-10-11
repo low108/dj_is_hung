@@ -387,3 +387,12 @@ button.link {
 .twin-traits dd {
   margin: 0;
 }
+
+.agree {
+  cursor: help;
+  border-bottom: 1px dotted currentColor;
+}
+.agree.all {
+  color: #2f6b3a;
+  font-weight: 600;
+}

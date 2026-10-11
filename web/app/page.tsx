@@ -125,6 +125,8 @@ type Simulation = {
     pairs_in_order: number;
   } | null;
   scored_runs?: number;
+  models?: string[];
+  agreement?: { candidate: string; by_model: Record<string, Price | "no data" | null>; agree: number; models: number }[];
   highlights?: CandidateHighlights[];
   result?: Outcome & { events: SimEvent[] };
 };
@@ -132,6 +134,24 @@ type Simulation = {
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 
 const priceLabel = (r: Ranked): string => (r.price ? PRICE_LABEL[r.price] : "No breakout");
+
+/** "2 of 3": models whose own verdict matches the other models'; each model's verdict on hover. */
+function agreementCell(sim: Simulation, candidate: string) {
+  const a = sim.agreement?.find((x) => x.candidate === candidate);
+  if (!a || a.models === 0) return "–";
+  const detail = Object.entries(a.by_model)
+    .sort(([x], [y]) => x.localeCompare(y)) // stored maps may come back in any key order
+    .map(([model, level]) => {
+      const verdict = level === "no data" ? "no data (its runs failed)" : level ? `${level} price` : "no breakout";
+      return `${modelName(model)}: ${verdict}`;
+    })
+    .join("\n");
+  return (
+    <span title={detail} className={a.agree === a.models ? "agree all" : "agree"}>
+      {a.agree} of {a.models}
+    </span>
+  );
+}
 
 function headline(r: Outcome | undefined): string {
   if (!r) return "Running…";
@@ -413,6 +433,8 @@ export default function Home() {
             <option value="fake">Scripted (instant)</option>
             <option value="ilmu:ilmu-mini-v3.3">ILMU (real, a few minutes)</option>
             <option value="gemini:gemini-3.5-flash">Gemini Flash (real)</option>
+            <option value="gemma:gemma-4-26b-a4b-it">Gemma 4 (real)</option>
+            <option value="ensemble">Three models: Gemini Pro, Flash and Gemma (real)</option>
           </select>
         </label>
         <label>
@@ -587,6 +609,7 @@ export default function Home() {
                 <th>Candidate</th>
                 <th>Highest price she still broke out at</th>
                 <th>Breakout rate at that price (95% range)</th>
+                <th>Models agreeing</th>
               </tr>
             </thead>
             <tbody>
@@ -598,6 +621,7 @@ export default function Home() {
                   <td>
                     {r.breakouts}/{r.runs} ({pct(r.ci_low)}–{pct(r.ci_high)})
                   </td>
+                  <td>{agreementCell(sim, r.candidate)}</td>
                 </tr>
               ))}
             </tbody>

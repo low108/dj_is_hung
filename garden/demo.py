@@ -20,6 +20,7 @@ POOL = tuple(Twin(n, "f" if n == WOMAN else "m") for n in PERSONAS)
 MEN = [t.alias for t in POOL if t.alias != WOMAN]
 
 FAKE_MODELS = ["fake:a", "fake:b", "fake:c"]  # three stand-ins for the three-model ensemble (F4)
+ENSEMBLE_ALIAS = "ensemble"  # models=["ensemble"] asks for llm.ENSEMBLE: Pro, Flash and Gemma
 
 
 def is_fake(model: str) -> bool:
