@@ -126,6 +126,7 @@ def create_app(store: SimulationStore | None = None, log_runs: bool = False) -> 
         }
         featured = featured_spec(specs)
         record["featured_run"] = featured.run_id if featured else None
+        record["twins"] = [t.alias for t in twins]  # the viewer places sprites before any event arrives
         app.state.store.save(sim_id, record)
         store = app.state.store
 

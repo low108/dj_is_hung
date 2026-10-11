@@ -1,6 +1,10 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
+
+// Phaser touches `window`, so the map only loads in the browser.
+const GardenMap = dynamic(() => import("./garden/GardenMap"), { ssr: false });
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
 
@@ -24,13 +28,22 @@ type Ranked = {
   ci_high: number;
 };
 
-type FeedEvent = { seq: number; day: number; twin: string | null; emoji: string; say: string; line: string };
+type FeedEvent = {
+  seq: number;
+  day: number;
+  twin: string | null;
+  place: string | null;
+  emoji: string;
+  say: string;
+  line: string;
+};
 
 type Simulation = {
   id: string;
   status: "running" | "done" | "failed";
   error?: string;
   featured_run?: string;
+  twins?: string[];
   runs?: { run_id: string }[];
   wall_seconds?: number;
   ranking?: Ranked[];
@@ -85,6 +98,8 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [feedEvents, setFeedEvents] = useState<FeedEvent[]>([]);
   const [featuredRun, setFeaturedRun] = useState<string | null>(null);
+  const [twinNames, setTwinNames] = useState<string[]>([]);
+  const [simId, setSimId] = useState<string | null>(null);
 
   async function follow(id: string) {
     // Poll the featured run's events and the simulation until it's done (Firestore listeners later).
@@ -116,6 +131,8 @@ export default function Home() {
     setSim(null);
     setFeedEvents([]);
     setFeaturedRun(null);
+    setTwinNames([]);
+    setSimId(null);
     try {
       const res = await fetch(`${API_URL}/simulations`, {
         method: "POST",
@@ -130,6 +147,8 @@ export default function Home() {
       if (!res.ok) throw new Error(`API returned ${res.status}`);
       const started: Simulation = await res.json();
       setFeaturedRun(started.featured_run ?? null);
+      setTwinNames(started.twins ?? []);
+      setSimId(started.id);
       await follow(started.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -183,6 +202,12 @@ export default function Home() {
         <p className="error">
           Couldn&apos;t reach the API at {API_URL}: {error}
         </p>
+      )}
+
+      {twinNames.length > 0 && (
+        <section className="result map">
+          <GardenMap key={simId ?? "none"} events={feedEvents} twins={twinNames} />
+        </section>
       )}
 
       {feedEvents.length > 0 && (

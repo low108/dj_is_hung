@@ -140,3 +140,15 @@ input[type="number"] {
 .feed li.announcement {
   color: var(--muted);
 }
+
+.map {
+  padding: 8px;
+  margin-bottom: 16px;
+}
+
+.garden-map canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
