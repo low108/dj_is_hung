@@ -170,3 +170,24 @@ def test_a_slip_around_a_quoted_line_is_still_caught():
     result = run_world(WorldConfig((MARA, REN), max_days=1, seed=1),
                        ConcordiaTwins(CountingModel(Leaky({}), letter_choices=False)))
     assert result.slips and not any("Come with me" in e.say for e in result.events if e.rung is R.TALK)
+
+
+def test_a_line_is_one_to_three_sentences_whatever_the_model_writes():
+    scene = '"' + " ".join(f"Sentence number {i} goes on." for i in range(40)) + '"'
+    line = _clean_speech("Lina", scene)
+    assert line.count(".") == 3 and len(line) <= 400
+
+
+def test_long_narration_between_quoted_parts_is_dropped():
+    raw = ('"I think I understand what you mean," she said softly, her gaze meeting his briefly before drifting '
+           'to the flowers just beyond them, where the light fell. "I work in publishing."')
+    assert _clean_speech("Lina", raw) == "I think I understand what you mean, I work in publishing."
+
+
+def test_only_twins_who_took_part_today_reflect():
+    lm = CountingModel(KeywordModel({}, say="A quiet day.\nRatings: longing=5"), letter_choices=False)
+    twins = ConcordiaTwins(lm)
+    world = (MARA, REN, Twin("Jun", "m"))
+    result = run_world(WorldConfig(world, max_days=2, seed=1), twins)
+    on_date = {e.twin for e in result.events if e.day == 1}
+    assert {r.twin for r in result.reflections if r.day == 1} == on_date and len(on_date) == 2

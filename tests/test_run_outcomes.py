@@ -109,6 +109,12 @@ def test_ordinary_lines_and_in_world_unease_are_not_slips(text):
     ("[day5privatewriting] Day 5 at the hall feels heavy.", "Day 5 at the hall feels heavy."),
     ("Sure, I'll write as Ren. Hello there.", "Hello there."),
     ("Here we are again, by the fountain.", "Here we are again, by the fountain."),
+    ("Certainly. Here is Ren B.'s private entry for the end of day 1: It was long.", "It was long."),
+    ("Lina's Private Reflection for Day 1 Day one in the Garden was strange.", "Day one in the Garden was strange."),
+    ("Ravi's Private Journal — End of Day 3 The program feels unclear.", "The program feels unclear."),
+    ("Private Reflection for Day 4: Day four dissolved into a blur.", "Day four dissolved into a blur."),
+    ("Entry to the hall was closed today.", "Entry to the hall was closed today."),
+    ("Reflections on the water were lovely.", "Reflections on the water were lovely."),
 ])
 def test_model_framing_is_stripped_and_the_rest_kept(raw, kept):
     assert strip_framing(raw) == kept

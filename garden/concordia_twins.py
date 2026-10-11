@@ -97,9 +97,11 @@ def ask_speech(rung: Rung, target: str, situation: Situation | None) -> str:
 
 # Narration between two quoted parts of one line: '"Hi," she says, "how are you?"' (or nothing at all
 # between them, once a stage direction is gone).
-_NARRATION = re.compile(r'["”]\s*(?:[^"“”]{0,80}?\b(?:says?|said|asks?|asked|adds?|added|whispers?|whispered|'
+_NARRATION = re.compile(r'["”]\s*(?:[^"“”]{0,300}?\b(?:says?|said|asks?|asked|adds?|added|whispers?|whispered|'
                         r'repl(?:y|ies|ied)|continues?|continued|murmurs?|murmured|smiles?|smiled|laughs?|laughed|'
-                        r'pauses?|paused|echoe?s|echoed)\b[^"“”]{0,80}?)?["“]')
+                        r'pauses?|paused|echoe?s|echoed|shrug(?:s|ged)?|sighs?|sighed|nods?|nodded)\b'
+                        r'[^"“”]{0,300}?)?["“]')
+MAX_LINE_SENTENCES, MAX_LINE_CHARS = 3, 400  # "one or two sentences": ILMU sometimes writes whole scenes
 # Stage directions and speaker labels: '*She pauses.*', '**Lina:**', '(after a long pause)'.
 _STAGE = (re.compile(r"\*\*[^*\n]{1,40}:\*\*"), re.compile(r"\*+[^*\n]*\*+"), re.compile(r"_\*+|\*+_"),
           re.compile(r"\([^)\n]*\)"), re.compile(r"\s*\([^)\n]*$"))
@@ -118,7 +120,7 @@ def _clean_speech(alias: str, text: str) -> str:
         if start != -1:
             end = text.rfind(quote_close)
             line = text[start + 1 : end if end > start else None]
-            return re.sub(r"\s+", " ", _NARRATION.sub(" ", line)).strip()
+            return _tidy(re.sub(r"\s+", " ", _NARRATION.sub(" ", line)), MAX_LINE_SENTENCES, MAX_LINE_CHARS)
     prefixes = ("Answer:", f"{alias} says:", f"{alias} said:", f"{alias}:", f"{alias} ")
     stripped = True
     while stripped:  # Concordia adds the name and models often repeat it: 'Theo Theo: Hey'
@@ -126,7 +128,7 @@ def _clean_speech(alias: str, text: str) -> str:
         for prefix in prefixes:
             if text.startswith(prefix):
                 text, stripped = text[len(prefix):].strip(), True
-    return text.splitlines()[0].strip() if text else ""
+    return _tidy(text.splitlines()[0], MAX_LINE_SENTENCES, MAX_LINE_CHARS) if text else ""
 
 
 class ConcordiaTwins:
@@ -231,10 +233,15 @@ class ConcordiaTwins:
         return result
 
     def after_day(self, day: int, events: list[Event]) -> list[Reflection]:
-        """Every twin reflects privately at the end of the day (what was said reached them as it happened,
-        through `hear`). The reflection becomes a memory; ratings are only logged."""
+        """Every twin that took part today reflects privately (what was said reached them as it happened,
+        through `hear`). A twin that spent the day waiting for someone else's date has nothing new to
+        reflect on: in live runs over half of all reflections were those, mostly musing about the place.
+        The reflection becomes a memory; ratings are only logged."""
         reflections = []
+        took_part = {e.twin for e in events} | {e.target for e in events if e.target}
         for alias, agent in self._agents.items():
+            if alias not in took_part:
+                continue
             spec = entity_lib.ActionSpec(
                 call_to_action=REFLECTION_PROMPT.format(
                     day=day, ratings=RATINGS_WITH_STANDING if self._standing_in_play.get(alias, True)
