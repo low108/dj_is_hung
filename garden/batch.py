@@ -69,10 +69,20 @@ def featured_spec(specs: list[RunSpec]) -> RunSpec | None:
 
 @dataclass(frozen=True)
 class Observer:
-    """What the viewer listens to on the featured run."""
+    """What listens to a run: the live viewer on the featured run, the replay recorder on every run."""
 
     on_feed: FeedHook | None = None
     on_state: StateHook | None = None
+
+    def __add__(self, other: Observer) -> Observer:
+        """Both observers hear everything, self first."""
+        return Observer(_both(self.on_feed, other.on_feed), _both(self.on_state, other.on_state))
+
+
+def _both(a, b):
+    if a is None or b is None:
+        return a or b
+    return lambda *args: (a(*args), b(*args))
 
 
 def run_one(spec: RunSpec, twins: tuple[Twin, ...], make_model: Callable[[RunSpec], Model],
@@ -89,15 +99,13 @@ def run_one(spec: RunSpec, twins: tuple[Twin, ...], make_model: Callable[[RunSpe
 
 
 def run_simulation(specs: list[RunSpec], twins: tuple[Twin, ...], make_model: Callable[[RunSpec], Model],
-                   parallelism: int = 12, featured: Callable[[RunSpec], Observer] | None = None,
+                   parallelism: int = 12, observe: Callable[[RunSpec], Observer | None] | None = None,
                    **config) -> Simulation:
-    """`featured(spec)` gives the Observer for the featured run (see featured_spec), which streams live."""
+    """`observe(spec)` gives the Observer for each run (or None), e.g. live streaming for featured_spec."""
     start = time.perf_counter()
-    first = featured_spec(specs)
 
     def go(spec: RunSpec) -> RunRecord:
-        observer = featured(spec) if featured and first and spec.run_id == first.run_id else None
-        return run_one(spec, twins, make_model, observer, **config)
+        return run_one(spec, twins, make_model, observe(spec) if observe else None, **config)
 
     with ThreadPoolExecutor(max_workers=max(1, parallelism)) as pool:
         records = list(pool.map(go, specs))

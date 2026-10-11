@@ -6,13 +6,14 @@ import threading
 import uuid
 from dataclasses import asdict
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from garden import demo, feed
+from garden import demo, feed, replay
 from garden import pools as pool_lib
 from garden import speed_dating as sd
 from garden.batch import Observer, PriceLevel, RunSpec, Simulation, featured_spec, plan, run_simulation
@@ -80,9 +81,12 @@ def serialize_simulation(sim: Simulation, woman: str = demo.WOMAN, men: list[str
             "result": runs[0]["result"] if runs else None}  # first run kept for the single-result page
 
 
-def create_app(store: SimulationStore | None = None, log_runs: bool = False) -> FastAPI:
+def create_app(store: SimulationStore | None = None, log_runs: bool = False,
+               replay_dir: Path | None = None) -> FastAPI:
+    """`replay_dir`: where finished runs are saved for replay (None: not saved, and no replays listed)."""
     app = FastAPI(title="dj_is_hung API")
     app.state.log_runs = log_runs
+    app.state.replay_dir = replay_dir
     app.state.store = store or default_store()
     origins = os.environ.get("CORS_ORIGINS")
     app.add_middleware(
@@ -131,11 +135,28 @@ def create_app(store: SimulationStore | None = None, log_runs: bool = False) -> 
         app.state.store.save(sim_id, record)
         store = app.state.store
 
-        def stream(spec: RunSpec) -> Observer:
-            cursor = feed.FeedCursor(spec.run_id)
-            return Observer(
-                on_feed=lambda item, word: store.add_events(sim_id, [cursor(item, word).to_dict()]),
-                on_state=lambda states: store.save_twin_states(sim_id, [asdict(s) for s in states]))
+        recorders = {spec.run_id: replay.Recorder(spec) for spec in specs}
+
+        def observe(spec: RunSpec) -> Observer:
+            observer = recorders[spec.run_id].observer
+            if featured and spec.run_id == featured.run_id:  # the featured run also streams live
+                cursor = feed.FeedCursor(spec.run_id)
+                observer += Observer(
+                    on_feed=lambda item, word: store.add_events(sim_id, [cursor(item, word).to_dict()]),
+                    on_state=lambda states: store.save_twin_states(sim_id, [asdict(s) for s in states]))
+            return observer
+
+        def save_replays(sim: Simulation) -> None:
+            if app.state.replay_dir is None:
+                return
+            fake = all(m.startswith("fake:") for m in req.models)
+            for rec in sim.records:
+                one = replay.replay_of(sim_id, rec, recorders[rec.spec.run_id], record["twins"],
+                                       scenario=req.scenario if fake else None,
+                                       featured=bool(featured and rec.spec.run_id == featured.run_id),
+                                       created_at=record["created_at"])
+                if one is not None:
+                    replay.save(one, app.state.replay_dir)
 
         def run() -> dict:
             try:
@@ -151,7 +172,8 @@ def create_app(store: SimulationStore | None = None, log_runs: bool = False) -> 
             # Runs fan out on local threads for now; A3 moves the same RunSpecs to Cloud Run Job tasks.
             sim = run_simulation(specs, twins,
                                  lambda spec: demo.make_twin_model(spec, personas, fake_scenario=req.scenario),
-                                 featured=stream, max_days=req.max_days)
+                                 observe=observe, max_days=req.max_days)
+            save_replays(sim)
             done = record | {"status": "done", "pool_iid": req.pool_iid,
                              **serialize_simulation(sim, woman, men, matched)}
             if app.state.log_runs:
@@ -180,6 +202,21 @@ def create_app(store: SimulationStore | None = None, log_runs: bool = False) -> 
             raise HTTPException(404, "simulation not found")
         return app.state.store.twin_states(sim_id)
 
+    @app.get("/replays")
+    def list_replays() -> list[dict]:
+        """Every saved run, newest simulation first: the run picker. Reads files only."""
+        return replay.list_replays(app.state.replay_dir) if app.state.replay_dir else []
+
+    @app.get("/replays/{sim_id}/{run_id}")
+    def get_replay(sim_id: str, run_id: str) -> dict:
+        """One run's stored feed events and evening snapshots. Never re-runs anything."""
+        if app.state.replay_dir is None:
+            raise HTTPException(404, "replays are not saved by this server")
+        try:
+            return replay.load(sim_id, run_id, app.state.replay_dir)
+        except KeyError as e:
+            raise HTTPException(404, str(e)) from e
+
     @app.get("/simulations/{sim_id}")
     def get_simulation(sim_id: str) -> dict:
         record = app.state.store.get(sim_id)
@@ -190,4 +227,4 @@ def create_app(store: SimulationStore | None = None, log_runs: bool = False) -> 
     return app
 
 
-app = create_app(log_runs=True)  # the served app logs every simulation; tests don't
+app = create_app(log_runs=True, replay_dir=replay.DEFAULT_DIR)  # the served app logs and saves replays; tests don't

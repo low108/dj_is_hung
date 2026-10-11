@@ -26,24 +26,34 @@ type Sprite = {
   slot: number;
 };
 
-const STEP_MS = 90; // per tile while walking
+const STEP_MS = 90; // per tile while walking, at 1×
+
+/** Where playback is: the day and seq of the last event played; caughtUp when the queue is empty. */
+export type Progress = { day: number; seq: number; caughtUp: boolean };
 const COLORS = [0xd1495b, 0x2e86ab, 0xf18f01, 0x6a4c93, 0x3d8361, 0x8d6346, 0x247ba0, 0xb5838d];
 
 /** The Garden drawn with Phaser. Plays feed events in order through a queue, walking each twin to
- * the place of its action along an EasyStar path; it speeds up when a live backlog builds.
- * Give it a `key` per simulation: a new run starts with a fresh map, queue and cursor. */
+ * the place of its action along an EasyStar path; with `catchUp` it hurries through a live backlog.
+ * `speed` scales every walk and timer; `paused` freezes playback where it is.
+ * Give it a `key` per simulation or replay: each starts with a fresh map, queue and cursor. */
 export default function GardenMap({
   events,
   twins,
   onSelect,
   onAnnouncement,
   onProgress,
+  speed = 1,
+  paused = false,
+  catchUp = true,
 }: {
   events: MapEvent[];
   twins: string[];
   onSelect?: (twin: string) => void;
   onAnnouncement?: (event: MapEvent) => void; // called when playback reaches it, so toasts match the map
-  onProgress?: (day: number, caughtUp: boolean) => void; // the day playback is on; caughtUp when the queue is empty
+  onProgress?: (progress: Progress) => void;
+  speed?: number;
+  paused?: boolean;
+  catchUp?: boolean; // live: hurry through a backlog; replay: everything is queued at once, so don't
 }) {
   const host = useRef<HTMLDivElement>(null);
   const queue = useRef<MapEvent[]>([]);
@@ -55,7 +65,29 @@ export default function GardenMap({
   onAnnouncementRef.current = onAnnouncement;
   const onProgressRef = useRef(onProgress);
   onProgressRef.current = onProgress;
-  const playingDay = useRef(0);
+  const played = useRef({ day: 0, seq: -1 });
+  const sceneRef = useRef<Phaser.Scene | null>(null);
+  const pausedRef = useRef(paused);
+  const speedRef = useRef(speed);
+  const catchUpRef = useRef(catchUp);
+  catchUpRef.current = catchUp;
+
+  useEffect(() => {
+    speedRef.current = speed;
+    if (sceneRef.current) sceneRef.current.tweens.timeScale = sceneRef.current.time.timeScale = speed;
+  }, [speed]);
+
+  useEffect(() => {
+    pausedRef.current = paused;
+    const s = sceneRef.current;
+    if (!s) return;
+    s.time.paused = paused;
+    if (paused) s.tweens.pauseAll();
+    else {
+      s.tweens.resumeAll();
+      resumePlayback.current?.();
+    }
+  }, [paused]);
 
   // New events join the queue (only ones not seen yet, in seq order).
   useEffect(() => {
@@ -118,6 +150,9 @@ export default function GardenMap({
             sprites.set(name, sprite);
             attachLabels(sprite);
           });
+          sceneRef.current = this;
+          this.tweens.timeScale = this.time.timeScale = speedRef.current;
+          this.time.paused = pausedRef.current;
           resumePlayback.current = () => playNext(this);
           playNext(this);
         }
@@ -130,11 +165,11 @@ export default function GardenMap({
       }
 
       function playNext(scene: Phaser.Scene) {
-        if (busy || cancelled) return;
+        if (busy || cancelled || pausedRef.current) return;
         // Announcements become toasts at this point in playback; anything else not drawable is skipped.
         const reached = (e: MapEvent) => {
-          playingDay.current = e.day;
-          onProgressRef.current?.(e.day, false);
+          played.current = { day: e.day, seq: e.seq };
+          onProgressRef.current?.({ ...played.current, caughtUp: false });
         };
         let next = queue.current.shift();
         while (next && !(next.twin && sprites.has(next.twin) && isPlace(next.place))) {
@@ -143,7 +178,7 @@ export default function GardenMap({
           next = queue.current.shift();
         }
         if (!next || !next.twin || !isPlace(next.place)) {
-          onProgressRef.current?.(playingDay.current, true);
+          onProgressRef.current?.({ ...played.current, caughtUp: true });
           return;
         }
         reached(next);
@@ -159,16 +194,25 @@ export default function GardenMap({
         finder.findPath(s.at.col, s.at.row, target.col, target.row, (path: { x: number; y: number }[] | null) => {
           if (cancelled) return;
           const steps = path && path.length > 1 ? path.slice(1) : [];
-          const pace = queue.current.length > 12 ? 0.3 : 1; // catch up when a live backlog builds
+          const pace = catchUpRef.current && queue.current.length > 12 ? 0.3 : 1; // catch up when a live backlog builds
           if (!steps.length) {
             busy = false;
             scene.time.delayedCall(150 * pace, () => playNext(scene));
             return;
           }
-          scene.tweens.chain({
-            targets: s.body,
-            tweens: steps.map((p) => ({ x: p.x * TILE + TILE / 2, y: p.y * TILE + TILE / 2, duration: STEP_MS * pace })),
-            onUpdate: () => attachLabels(s),
+          // One tween along the whole path (not one per tile), so 4× isn't held back by per-frame steps.
+          const points = [{ x: s.body.x, y: s.body.y }, ...steps.map((p) => ({ x: p.x * TILE + TILE / 2, y: p.y * TILE + TILE / 2 }))];
+          scene.tweens.addCounter({
+            from: 0,
+            to: steps.length,
+            duration: STEP_MS * steps.length * pace,
+            onUpdate: (tween) => {
+              const v = tween.getValue() ?? 0;
+              const i = Math.min(Math.floor(v), steps.length - 1);
+              const [a, b] = [points[i], points[i + 1]];
+              s.body.setPosition(a.x + (b.x - a.x) * (v - i), a.y + (b.y - a.y) * (v - i));
+              attachLabels(s);
+            },
             onComplete: () => {
               if (cancelled) return;
               s.at = target;
@@ -195,6 +239,7 @@ export default function GardenMap({
     return () => {
       cancelled = true;
       resumePlayback.current = null;
+      sceneRef.current = null;
       game?.destroy(true);
     };
   }, [twins]);
