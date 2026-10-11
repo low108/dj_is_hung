@@ -126,7 +126,7 @@ type Simulation = {
   } | null;
   scored_runs?: number;
   models?: string[];
-  agreement?: { candidate: string; by_model: Record<string, Price | null>; agree: number; models: number }[];
+  agreement?: { candidate: string; by_model: Record<string, Price | "no data" | null>; agree: number; models: number }[];
   highlights?: CandidateHighlights[];
   result?: Outcome & { events: SimEvent[] };
 };
@@ -135,13 +135,16 @@ const pct = (x: number) => `${Math.round(x * 100)}%`;
 
 const priceLabel = (r: Ranked): string => (r.price ? PRICE_LABEL[r.price] : "No breakout");
 
-/** "2 of 3", with each model's own verdict on hover. */
+/** "2 of 3": models whose own verdict matches the other models'; each model's verdict on hover. */
 function agreementCell(sim: Simulation, candidate: string) {
   const a = sim.agreement?.find((x) => x.candidate === candidate);
   if (!a || a.models === 0) return "–";
   const detail = Object.entries(a.by_model)
     .sort(([x], [y]) => x.localeCompare(y)) // stored maps may come back in any key order
-    .map(([model, level]) => `${modelName(model)}: ${level ? `${level} price` : "no breakout"}`)
+    .map(([model, level]) => {
+      const verdict = level === "no data" ? "no data (its runs failed)" : level ? `${level} price` : "no breakout";
+      return `${modelName(model)}: ${verdict}`;
+    })
     .join("\n");
   return (
     <span title={detail} className={a.agree === a.models ? "agree all" : "agree"}>

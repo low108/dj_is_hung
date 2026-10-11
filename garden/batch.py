@@ -46,6 +46,10 @@ class RunRecord:
     wall_seconds: float
     error: str | None = None
 
+    @property
+    def scorable(self) -> bool:
+        return self.result is not None and self.result.scorable
+
 
 @dataclass
 class Simulation:
@@ -54,7 +58,7 @@ class Simulation:
 
     @property
     def scorable(self) -> list[RunRecord]:
-        return [r for r in self.records if r.result is not None and r.result.scorable]
+        return [r for r in self.records if r.scorable]
 
 
 def plan(models: list[str], prices: list[PriceLevel], seeds: list[int]) -> list[RunSpec]:

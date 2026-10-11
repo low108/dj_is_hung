@@ -1,8 +1,10 @@
-"""Cross-model agreement (F4): does each model, on its own runs, reach the same verdict on a candidate
-as the whole ensemble? A candidate's verdict is the highest price level at which her twin broke out
-with him (see scoring), so agreement is the number of models whose own verdict matches.
+"""Cross-model agreement (F4): for each candidate, does each model, on its own runs, reach the same
+verdict as the other models together? A candidate's verdict is the highest price level at which her
+twin broke out with him (see scoring). Comparing a model with the *others* (not the full pool, which
+includes its own runs) keeps one model from agreeing with itself.
 
-Models with no scored runs (every run errored or was excluded) have no verdict and aren't counted.
+Every model that ran is listed; one with no scored runs (all errored or excluded) has no verdict, shows
+as "no data" and can't agree, so a failed model is visible rather than silently dropped.
 """
 from __future__ import annotations
 
@@ -11,14 +13,16 @@ from dataclasses import dataclass
 from .batch import RunRecord
 from .scoring import CandidateScore, score
 
+NO_DATA = "no data"
+
 
 @dataclass(frozen=True)
 class Agreement:
     candidate: str
-    verdict: str | None              # the ensemble's: highest price level with a breakout (None = never)
-    by_model: dict[str, str | None]  # each model's own verdict
-    agree: int                       # models whose verdict matches the ensemble's
-    models: int                      # models with scored runs
+    verdict: str | None              # the whole ensemble's: highest price level with a breakout (None = never)
+    by_model: dict[str, str | None]  # each model's own verdict, or NO_DATA
+    agree: int                       # models whose verdict matches the other models' pooled verdict
+    models: int                      # every model that ran
 
     def to_dict(self) -> dict:
         return {"candidate": self.candidate, "verdict": self.verdict, "by_model": self.by_model,
@@ -29,15 +33,21 @@ def _level(c: CandidateScore) -> str | None:
     return c.price.value if c.price else None
 
 
+def _verdicts(records: list[RunRecord], woman: str, men: list[str]) -> dict[str, str | None]:
+    return {c.candidate: _level(c) for c in score(records, woman, men)}
+
+
 def agreement(records: list[RunRecord], ensemble: list[CandidateScore], woman: str,
               men: list[str]) -> list[Agreement]:
     """One row per candidate, in the ensemble's ranking order."""
-    scored_models = sorted({r.spec.model for r in records if r.result is not None and r.result.scorable})
-    verdicts = {m: {c.candidate: _level(c) for c in score([r for r in records if r.spec.model == m], woman, men)}
-                for m in scored_models}
+    models = sorted({r.spec.model for r in records})
+    scored = {m for m in models if any(r.scorable for r in records if r.spec.model == m)}
+    own = {m: _verdicts([r for r in records if r.spec.model == m], woman, men) for m in scored}
+    others = {m: _verdicts([r for r in records if r.spec.model != m], woman, men) for m in scored}
     rows = []
     for c in ensemble:
-        by_model = {m: verdicts[m][c.candidate] for m in scored_models}
-        agree = sum(1 for v in by_model.values() if v == _level(c))
-        rows.append(Agreement(c.candidate, _level(c), by_model, agree, len(scored_models)))
+        by_model = {m: own[m][c.candidate] if m in scored else NO_DATA for m in models}
+        # A model agrees when the others have scored runs too and reach the same verdict.
+        agree = sum(1 for m in scored if len(scored) > 1 and own[m][c.candidate] == others[m][c.candidate])
+        rows.append(Agreement(c.candidate, _level(c), by_model, agree, len(models)))
     return rows

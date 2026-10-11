@@ -14,8 +14,12 @@
 **Decision: Gemma 4 through the Gemini API**, not vLLM on a Cloud Run GPU service.
 
 - The Gemini API serves Gemma 4 (`gemma-4-26b-a4b-it` and `gemma-4-31b-it`) on the same key and client as Gemini, with a free tier, so there is no GPU service to deploy, scale to zero or pay for while idle.
-- Guided decoding is available there too: Gemma accepts JSON-mode requests with a response schema. Ladder-rung choices are requested as `{"choice": <enum of the option letters>}`, so a reply can only be a valid option (`GemmaModel.choose_letter`; anything else is retried, never returned).
+- Guided decoding is available there too: Gemma accepts JSON-mode requests with a response schema. Ladder-rung choices are requested as `{"choice": <enum of the option letters>}`, so a reply can only be a valid option (`GemmaModel.guided_letter`). An off-schema or cut-off reply is retried (each attempt counted); after three, the run fails with `InvalidResponseError` rather than guess an action.
 - Gemma 4 always "thinks" before free text on the Gemini API (20–40 s a call; thinking level and budget are rejected), but answers JSON-mode requests directly in 1–2 s. So speech and reflections are requested as `{"text": ...}` too.
 - **26B-A4B over 31B:** the mixture-of-experts model (4B active parameters) answers a constrained choice in ~1 s; the 31B dense model took ~35 s for the same request (measured 2026-10-11).
 
-vLLM on Cloud Run GPUs remains the fallback if the Gemini API stops serving Gemma or its quota is too small for a demo; `GemmaModel` would then become an OpenAI-compatible client with vLLM's `guided_choice`.
+vLLM on a Cloud Run GPU service (internal ingress only, called from the simulation jobs) remains the fallback if the Gemini API stops serving Gemma or its quota is too small for a demo; `GemmaModel` would then become an OpenAI-compatible client with vLLM's `guided_choice`.
+
+## The ensemble (F4)
+
+`llm.ENSEMBLE` = Gemini Pro, Gemini Flash, Gemma 4; request it with `models: ["ensemble"]` (the web app's "Three models" option). Scripted simulations use three stand-ins (`fake:a/b/c`) so the default demo makes no API calls. Each run records its model; agreement compares each model's verdict with the other models' pooled verdict, and a model whose runs all failed shows as "no data". Gemini Pro needs billing (no free-tier quota).

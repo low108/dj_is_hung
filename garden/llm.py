@@ -8,6 +8,7 @@ import os
 import threading
 import time
 from collections.abc import Collection, Sequence
+from typing import Protocol, runtime_checkable
 from dataclasses import dataclass
 
 import numpy as np
@@ -16,6 +17,7 @@ from concordia.language_model import language_model
 FLASH = "gemini-3.5-flash"  # 3.8-flash returned 503 (overloaded) on 2026-10-10
 PRO = "gemini-3.1-pro-preview"
 GEMMA = "gemma-4-26b-a4b-it"  # MoE, 4B active: ~1-2s per call in JSON mode; the 31B dense model takes ~35s
+ENSEMBLE = [f"gemini:{PRO}", f"gemini:{FLASH}", f"gemma:{GEMMA}"]  # F4: a Pro, a Flash and an open model
 
 
 @dataclass
@@ -72,6 +74,10 @@ def shared_pacer(key: tuple[str, str], requests_per_minute: int | None) -> Pacer
         return _PACERS.setdefault(key, Pacer(requests_per_minute))
 
 
+class RetryableReply(Exception):
+    """A reply we can't use but another try may fix (e.g. JSON cut off at max_tokens)."""
+
+
 def _no_quota(error: Exception) -> bool:
     """A 429 that waiting a minute won't fix: no quota for this model on the plan (Pro on the free
     tier), or the day's quota is used up."""
@@ -113,6 +119,12 @@ class CountingModel(language_model.LanguageModel):
             try:
                 out = call()
                 break
+            except RetryableReply:
+                if attempt == last:
+                    raise
+                with self._lock:
+                    self.stats.retries += 1
+                continue
             except Exception as e:  # overloads (503) and rate limits (429) are temporary
                 code = getattr(e, "code", None) or getattr(e, "status_code", None)
                 if code not in (429, 500, 503) or attempt == last or _no_quota(e):
@@ -130,9 +142,16 @@ class CountingModel(language_model.LanguageModel):
     def sample_choice(self, prompt: str, responses: Sequence[str], *, seed: int | None = None):
         with self._lock:
             self.stats.choice_calls += 1
-        if self._letter_choices and hasattr(self._inner, "choose_letter"):  # guided decoding: always valid
-            letter = self._counted(prompt, lambda: self._inner.choose_letter(prompt + CHOICE_HINT, responses))
-            return responses.index(letter), letter, {"attempts": 1, "constrained": True}
+        if self._letter_choices and isinstance(self._inner, GuidedChoices):  # guided decoding: always valid
+            for attempt in range(CHOICE_ATTEMPTS):
+                temperature = CHOICE_TEMPERATURE + CHOICE_RETRY_STEP * attempt
+                letter = self._counted(prompt, lambda t=temperature: self._inner.guided_letter(
+                    prompt + CHOICE_HINT, responses, t))
+                if letter in responses:
+                    return responses.index(letter), letter, {"attempts": attempt + 1, "constrained": True}
+                with self._lock:
+                    self.stats.retries += 1
+            raise language_model.InvalidResponseError("no valid choice under guided decoding")
         if self._letter_choices:
             return language_model_choice(self, prompt, responses, seed=seed)
         return self._inner.sample_choice(prompt, responses, seed=seed)
@@ -155,6 +174,8 @@ CHOICE_TEMPERATURE = 0.5  # first attempt
 CHOICE_RETRY_STEP = 0.1   # added per retry when a reply has no valid letter
 TEXT_TEMPERATURE = 1.0    # speech and reflections
 CHOICE_HINT = "\n(Reply with only the letter of the chosen option.)\nAnswer: ("
+CHOICE_ATTEMPTS = 3
+JSON_OVERHEAD_TOKENS = 64  # room for the {"text": ...} wrapper and escaping in JSON-mode replies
 
 
 def language_model_choice(model: CountingModel, prompt: str, responses: Sequence[str], *, seed=None):
@@ -198,56 +219,71 @@ class GenAIModel(language_model.LanguageModel):
 
     def sample_json(self, prompt: str, schema: type) -> str:
         """One call constrained to the pydantic `schema` (Gemini structured output)."""
-        from google.genai import types
-
-        config = types.GenerateContentConfig(response_mime_type="application/json", response_schema=schema,
-                                             temperature=TEXT_TEMPERATURE, max_output_tokens=8192)
-        response = self._client.models.generate_content(model=self._name, contents=prompt, config=config)
-        return response.text or ""
+        return _genai_json(self._client, self._name, prompt, schema, TEXT_TEMPERATURE, 8192)
 
     def sample_choice(self, prompt: str, responses: Sequence[str], *, seed: int | None = None):
         raise NotImplementedError("wrap in CountingModel, which answers choices by letter")
 
 
-class GemmaModel(GenAIModel):
+def _genai_json(client, model: str, prompt: str, schema, temperature: float, max_tokens: int) -> str:
+    """One JSON-mode request through the Gen AI SDK; the reply text (may be cut off at max_tokens)."""
+    from google.genai import types
+
+    config = types.GenerateContentConfig(response_mime_type="application/json", response_schema=schema,
+                                         temperature=temperature, max_output_tokens=max_tokens)
+    return client.models.generate_content(model=model, contents=prompt, config=config).text or ""
+
+
+@runtime_checkable
+class GuidedChoices(Protocol):
+    """A model that can be asked for an option letter under guided decoding (the reply is one of them)."""
+
+    def guided_letter(self, prompt: str, letters: Sequence[str], temperature: float) -> str | None: ...
+
+
+class GemmaModel(language_model.LanguageModel):
     """Gemma 4 on the Gemini API. It always thinks before free text (20-40s a call, and thinking can't be
     turned off), but answers JSON-mode requests directly in 1-2s. So speech and reflections come back as
     {"text": ...}, and ladder choices are constrained to an enum of the option letters: guided decoding,
-    so Gemma can't return an invalid action."""
+    so Gemma can't return an invalid action (CountingModel retries, then fails the run, never guesses)."""
 
     TEXT_SCHEMA = {"type": "OBJECT", "properties": {"text": {"type": "STRING"}}, "required": ["text"]}
 
-    def _json(self, prompt: str, schema: dict, temperature: float, max_tokens: int) -> dict:
-        from google.genai import types
+    def __init__(self, model_name: str, api_key: str | None = None):
+        from google import genai
 
-        config = types.GenerateContentConfig(response_mime_type="application/json", response_schema=schema,
-                                             temperature=temperature, max_output_tokens=max_tokens)
-        response = self._client.models.generate_content(model=self._name, contents=prompt, config=config)
+        self._name = model_name
+        self._client = genai.Client(api_key=api_key or os.environ["GEMINI_API_KEY"])
+
+    def _json_object(self, prompt: str, schema: dict, temperature: float, max_tokens: int) -> dict:
+        """The reply as a dict; RetryableReply if it was cut off or isn't an object."""
         try:
-            data = json.loads(response.text or "{}")
-        except json.JSONDecodeError:  # cut off at max_tokens: an empty reply, which callers retry
-            return {}
-        return data if isinstance(data, dict) else {}
+            data = json.loads(_genai_json(self._client, self._name, prompt, schema, temperature, max_tokens))
+        except json.JSONDecodeError as e:
+            raise RetryableReply(f"{self._name} reply was not complete JSON") from e
+        if not isinstance(data, dict):
+            raise RetryableReply(f"{self._name} reply was not a JSON object")
+        return data
 
     def sample_text(self, prompt: str, *, max_tokens: int = language_model.DEFAULT_MAX_TOKENS,
                     terminators: Collection[str] = (), temperature: float = TEXT_TEMPERATURE, **kwargs) -> str:
-        text = str(self._json(prompt, self.TEXT_SCHEMA, temperature, max(max_tokens + 32, 96)).get("text", ""))
+        reply = self._json_object(prompt, self.TEXT_SCHEMA, temperature, max_tokens + JSON_OVERHEAD_TOKENS)
+        text = str(reply.get("text", ""))
         for stop in terminators:  # JSON mode has no stop sequences; cut where one would have stopped
             if stop and stop in text:
                 text = text.split(stop, 1)[0]
         return text.strip()
 
     def sample_json(self, prompt: str, schema: type) -> str:
-        return GenAIModel.sample_json(self, prompt, schema)
+        return _genai_json(self._client, self._name, prompt, schema, TEXT_TEMPERATURE, 8192)
 
-    def choose_letter(self, prompt: str, letters: Sequence[str]) -> str:
+    def guided_letter(self, prompt: str, letters: Sequence[str], temperature: float) -> str | None:
         schema = {"type": "OBJECT", "properties": {"choice": {"type": "STRING", "enum": list(letters)}},
                   "required": ["choice"]}
-        for attempt in range(3):
-            letter = self._json(prompt, schema, CHOICE_TEMPERATURE + CHOICE_RETRY_STEP * attempt, 64).get("choice")
-            if letter in letters:
-                return letter
-        raise language_model.InvalidResponseError(f"no valid choice from {self._name}")
+        return self._json_object(prompt, schema, temperature, JSON_OVERHEAD_TOKENS).get("choice")
+
+    def sample_choice(self, prompt: str, responses: Sequence[str], *, seed: int | None = None):
+        raise NotImplementedError("wrap in CountingModel, which uses guided_letter")
 
 
 def _answer_only(text: str) -> str:
@@ -297,9 +333,14 @@ ILMU_BASE_URL = "https://api.ilmu.ai/v1"
 ILMU_MINI = "ilmu-mini-v3.3"
 
 
+def _paced(inner, provider: str, model: str, attempts: int, requests_per_minute: int | None = None) -> CountingModel:
+    """Counted, with the provider's shared client-side rate limit ({PROVIDER}_RPM, e.g. GEMINI_RPM)."""
+    rpm = requests_per_minute or int(os.environ.get(f"{provider.upper()}_RPM", "0")) or None
+    return CountingModel(inner, pacer=shared_pacer((provider, model), rpm), attempts=attempts)
+
+
 def gemini(model_name: str = FLASH, requests_per_minute: int | None = None, attempts: int = 6) -> CountingModel:
-    rpm = requests_per_minute or int(os.environ.get("GEMINI_RPM", "0")) or None
-    return CountingModel(GenAIModel(model_name), pacer=shared_pacer(("gemini", model_name), rpm), attempts=attempts)
+    return _paced(GenAIModel(model_name), "gemini", model_name, attempts, requests_per_minute)
 
 
 def make_model(spec: str | None = None, attempts: int = 6) -> CountingModel:
@@ -308,15 +349,12 @@ def make_model(spec: str | None = None, attempts: int = 6) -> CountingModel:
     spec = spec or os.environ.get("TWIN_MODEL") or f"gemini:{FLASH}"
     provider, _, name = spec.partition(":") if ":" in spec else ("gemini", "", spec)
     if provider == "gemma" or (provider == "gemini" and name.startswith("gemma")):
-        rpm = int(os.environ.get("GEMMA_RPM", "0")) or None
-        model = name or GEMMA
-        return CountingModel(GemmaModel(model), pacer=shared_pacer(("gemma", model), rpm), attempts=attempts)
+        return _paced(GemmaModel(name or GEMMA), "gemma", name or GEMMA, attempts)
     if provider == "gemini":
-        return gemini(name or FLASH, attempts=attempts)
+        return _paced(GenAIModel(name or FLASH), "gemini", name or FLASH, attempts)
     if provider == "ilmu":
-        rpm = int(os.environ.get("ILMU_RPM", "0")) or None
         inner = OpenAICompatModel(name or ILMU_MINI, ILMU_BASE_URL, os.environ["ILMU_API_KEY"])
-        return CountingModel(inner, pacer=shared_pacer(("ilmu", name or ILMU_MINI), rpm), attempts=attempts)
+        return _paced(inner, "ilmu", name or ILMU_MINI, attempts)
     raise ValueError(f"unknown model provider {provider!r} in {spec!r}")
 
 
