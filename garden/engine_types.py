@@ -42,6 +42,7 @@ class Situation:
     schedule: str = ""  # the Coordinator's word: current assignment, tonight's gathering, rumours
     may_break_rules: bool = False  # the verdict gate: whether proposing to leave / the wall are offered
     standing_in_play: bool = True  # False in the ablation's floor: twins aren't told Standing exists
+    invited_by: tuple[str, ...] = ()  # twins whose invitation to leave together is still open
 
 
 class OutcomeKind(str, Enum):
