@@ -79,3 +79,7 @@ uv run python scripts/measure_run.py --model gemini:gemini-3.5-flash-lite --men 
 ```
 
 The free tier allows about 5 requests per minute and 20 per day per model, which is enough for a small measurement but not for demo-sized simulations. Those need billing enabled on the key's Google Cloud project.
+
+## Simulation viewer
+
+`web/app/garden/` draws the Garden with Phaser 3 (shapes in code, no third-party tileset or sprites, so there is no art licence to track) and walks twins between places with EasyStar.js pathfinding. It plays the featured run's feed events in order, live or after the fact. Libraries: Phaser 3.90.0 (MIT), EasyStar.js 0.4.4 (MIT).
