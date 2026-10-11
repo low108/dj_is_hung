@@ -36,8 +36,13 @@ class WorldConfig:
         return dict(self.thresholds).get(alias, self.default_threshold)
 
 
+MAX_BREAKS_PER_TWIN = 2  # more rejected lines than this from one twin in a run, and the run is excluded
+
+
 class Model(Protocol):
-    """Decides what a twin does next. Real models (Gemini, Gemma, ILMU) and the fake model share this."""
+    """Decides what a twin does next. Real models (Gemini, Gemma, ILMU) and the fake model share this.
+    Optional extras the engine reads if present: `after_day(day, events) -> list[Reflection]` and
+    `breaks: list[Breach]` (lines rejected for breaking immersion)."""
 
     def choose_action(self, twin: Twin, day: int, others: tuple[Twin, ...], situation: Situation) -> Action: ...
 
@@ -55,7 +60,11 @@ class RunResult:
     announcements: list[Announcement] = field(default_factory=list)  # Coordinator, for the viewer
     verdicts: list[Verdict] = field(default_factory=list)  # one per twin per day
     breach: Breach | None = None  # set when the run was excluded
-    resamples: int = 0  # lines/reflections the model re-asked because they broke immersion
+    immersion_breaks: list[Breach] = field(default_factory=list)  # rejected and re-asked by the model
+
+    @property
+    def immersion_resamples(self) -> int:
+        return len(self.immersion_breaks)
 
     @property
     def scorable(self) -> bool:
@@ -83,7 +92,16 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
         return RunResult(outcome=outcome, day=day, pair=pair, unrequited=unrequited, events=events,
                          standing=standing, longing={t.alias: longing.of(t.alias) for t in config.twins},
                          reflections=reflections, announcements=coordinator.announcements,
-                         verdicts=verdicts, breach=breach, resamples=getattr(model, "resamples", 0))
+                         verdicts=verdicts, breach=breach,
+                         immersion_breaks=list(getattr(model, "breaks", [])))
+
+    def repeated_breaker(breaks: list[Breach]) -> Breach | None:
+        counts: dict[str, int] = {}
+        for b in breaks:
+            counts[b.twin] = counts.get(b.twin, 0) + 1
+            if counts[b.twin] > MAX_BREAKS_PER_TWIN:
+                return b
+        return None
 
     def find_breach(day: int, writings: list[tuple[str, str]]) -> Breach | None:
         for twin, text in writings:
@@ -175,5 +193,7 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
             last_ratings.update({r.twin: r.ratings for r in todays if r.ratings})
             if found := find_breach(day, [(r.twin, r.text) for r in todays]):
                 return result(OutcomeKind.EXCLUDED, day, breach=found)
+        if found := repeated_breaker(getattr(model, "breaks", [])):
+            return result(OutcomeKind.EXCLUDED, day, breach=found)  # clean resamples, but it kept slipping
 
     return result(OutcomeKind.TIMEOUT, config.max_days)

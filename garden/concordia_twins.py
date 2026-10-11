@@ -7,9 +7,11 @@ from concordia.prefabs.entity import minimal
 from concordia.typing import entity as entity_lib
 
 import re
+from collections.abc import Callable
+from typing import TypeVar
 
 from . import immersion
-from .engine_types import Action, Event, Reflection, Rung, Situation, Twin
+from .engine_types import Action, Breach, Event, Reflection, Rung, Situation, Twin
 from .verdict import GATED_RUNGS
 from .llm import hash_embedder
 from .world_text import (ASK_ACTION, ASK_SPEECH, ASK_TARGET, NEEDS_TARGET, OBSERVE_DAY, OBSERVE_NOTE,
@@ -18,6 +20,7 @@ from .world_text import (ASK_ACTION, ASK_SPEECH, ASK_TARGET, NEEDS_TARGET, OBSER
 
 _OPTION_TO_RUNG = {text: Rung(key) for key, text in RUNG_OPTIONS.items()}
 RESAMPLES = 2  # extra attempts for a line or reflection that breaks immersion
+T = TypeVar("T")
 
 
 def offered_options(situation: Situation | None) -> tuple[str, ...]:
@@ -54,7 +57,7 @@ class ConcordiaTwins:
         self._personas = personas or {}
         self._agents: dict[str, object] = {}
         self._standing_in_play: dict[str, bool] = {}
-        self.resamples = 0  # lines/reflections re-asked because they broke immersion
+        self.breaks: list[Breach] = []  # every line/reflection rejected for breaking immersion (then re-asked)
 
     def _agent(self, twin: Twin, standing_in_play: bool = True):
         if twin.alias not in self._agents:
@@ -101,18 +104,22 @@ class ConcordiaTwins:
         if rung.value in SPEAKS and target:
             spec = entity_lib.ActionSpec(call_to_action=ASK_SPEECH.format(target=target),
                                          output_type=entity_lib.OutputType.FREE)
-            say = self._immersive(lambda: _clean_speech(twin.alias, agent.act(spec)), lambda line: line)
+            say = self._resample_while_breaking(twin.alias, day, lambda: _clean_speech(twin.alias, agent.act(spec)),
+                                                lambda line: line)
         return Action(rung, target, say)
 
-    def _immersive(self, sample, text_of):
+    def _resample_while_breaking(self, alias: str, day: int, sample: Callable[[], T],
+                                 text_of: Callable[[T], str]) -> T:
         """Sample, and re-ask up to RESAMPLES times while the text breaks immersion. A one-off glitch
-        (a model refusing the roleplay, "this experiment") shouldn't throw away a whole run; a twin that
-        keeps breaking immersion still reaches the engine, which then excludes the run."""
+        (a model refusing the roleplay, "this experiment") shouldn't throw away a whole run; every
+        rejected text is recorded in `breaks`, and the engine excludes the run if a twin keeps breaking
+        immersion (on every attempt, or too often across the run)."""
         result = sample()
         for _ in range(RESAMPLES):
-            if not immersion.breaking_phrase(text_of(result)):
+            phrase = immersion.breaking_phrase(text_of(result))
+            if not phrase:
                 break
-            self.resamples += 1
+            self.breaks.append(Breach(day, alias, phrase, text_of(result)))
             result = sample()
         return result
 
@@ -131,7 +138,8 @@ class ConcordiaTwins:
                     else RATINGS_WITHOUT_STANDING),
                 output_type=entity_lib.OutputType.FREE,
             )
-            text, ratings = self._immersive(lambda: parse_reflection(alias, agent.act(spec)), lambda r: r[0])
+            text, ratings = self._resample_while_breaking(alias, day, lambda: parse_reflection(alias, agent.act(spec)),
+                                                          lambda r: r[0])
             if text:
                 agent.observe(OBSERVE_REFLECTION.format(day=day, text=text))
             reflections.append(Reflection(day, alias, text, ratings))

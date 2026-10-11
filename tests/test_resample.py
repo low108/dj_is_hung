@@ -27,13 +27,22 @@ def run(replies, days=2):
 def test_a_one_off_break_is_resampled_and_the_run_survives():
     result = run([BROKEN])
     assert result.outcome is OutcomeKind.TIMEOUT and result.scorable
-    assert result.resamples == 1
+    assert result.immersion_resamples == 1
+    assert result.immersion_breaks[0].phrase.lower() == "roleplay"
 
 
 def test_a_twin_that_keeps_breaking_immersion_still_gets_the_run_excluded():
     result = run([BROKEN] * (RESAMPLES + 1))
-    assert result.outcome is OutcomeKind.EXCLUDED and result.resamples == RESAMPLES
+    assert result.outcome is OutcomeKind.EXCLUDED and result.immersion_resamples == RESAMPLES
 
 
 def test_clean_runs_have_no_resamples():
-    assert run([]).resamples == 0
+    assert run([]).immersion_resamples == 0
+
+
+def test_a_twin_that_slips_again_and_again_gets_the_run_excluded_even_with_clean_resamples():
+    # Every free-text call alternates broken, clean: each line is rescued, but the twin keeps slipping.
+    replies = [BROKEN, CLEAN] * 20
+    result = run(replies, days=6)
+    assert result.outcome is OutcomeKind.EXCLUDED
+    assert result.immersion_resamples > 2
