@@ -55,7 +55,8 @@ def main() -> None:
     print("breakouts:", dict(pairs) or "none", "| flagged:", sum(1 for r in sim.records if r.result and not r.result.scorable))
     ranking = score(list(sim.records), woman, men)
     for i, c in enumerate(ranking, 1):
-        print(f"  {i}. {c.candidate:8s} {c.breakouts}/{c.runs} runs with a date "
+        print(f"  {i}. {c.candidate:8s} she chose him in {c.chosen}/{c.runs} runs with a date "
+              f"(broke out {c.breakouts}) "
               f"({c.ci_low:.0%}-{c.ci_high:.0%})")
     if pool.matched is not None:
         check = pool_lib.check_ranking(ranking, pool.matched)

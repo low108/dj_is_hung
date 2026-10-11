@@ -40,7 +40,8 @@ def test_each_top_candidate_gets_three_to_four_highlights_and_an_exact_pattern_l
     records, scores = simulate()
     [ren] = highlights.for_simulation(records, scores, WOMAN, demo.PERSONAS)
     assert ren.candidate == MAN and 3 <= len(ren.highlights) <= 4
-    assert ren.pattern == "Her twin crossed the wall with his twin in 2 of the 2 runs where they had a date."
+    assert ren.pattern == ("Her twin tried to leave the Garden with his twin in 2 of the 2 runs where they had a date. "
+                           "They crossed together in 2.")
     assert [h.kind for h in ren.highlights[:2]] == ["breakout", "go_beyond_wall"]
 
 

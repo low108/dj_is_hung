@@ -160,9 +160,10 @@ def moments(records: list[RunRecord], woman: str, man: str) -> list[Moment]:
 
 
 def pattern_line(score: CandidateScore) -> str:
-    """One exact sentence from the scores (for a candidate she broke out with)."""
-    k, n = score.breakouts, score.runs
-    return f"Her twin crossed the wall with his twin in {k} of the {n} runs where they had a date."
+    """One exact sentence from the scores (for a candidate she chose)."""
+    k, n = score.chosen, score.runs
+    crossed = f" They crossed together in {score.breakouts}." if score.breakouts else ""
+    return f"Her twin tried to leave the Garden with his twin in {k} of the {n} runs where they had a date.{crossed}"
 
 
 PROMPT = """You are choosing highlights from simulated dates between two AI twins in a walled Garden.
@@ -252,7 +253,7 @@ def for_simulation(records: list[RunRecord], scores: list[CandidateScore], woman
     """Highlights for the top candidates her twin broke out with (best first)."""
     terms = personal_terms(personas)
     out = []
-    for score in [s for s in scores if s.breakouts][:TOP]:
+    for score in [s for s in scores if s.chosen][:TOP]:
         chosen, source = pick(moments(records, woman, score.candidate), terms, model)
         out.append(CandidateHighlights(score.candidate, pattern_line(score), chosen, source))
     return out

@@ -65,7 +65,7 @@ def write_simulation(sim_id: str, sim: Simulation, woman: str, men: list[str], *
                          **{f"rating_{k}": r.ratings.get(k) for k in RATINGS}} for r in res.reflections]
 
     scores = [{"sim_id": sim_id, "woman": woman, "candidate": c.candidate,
-               "breakouts": c.breakouts, "runs": c.runs, "rate": round(c.rate, 3),
+               "chosen": c.chosen, "breakouts": c.breakouts, "runs": c.runs, "rate": round(c.rate, 3),
                "ci_low": c.ci_low, "ci_high": c.ci_high}
               for c in score(list(sim.records), woman, men)]
 

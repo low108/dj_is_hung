@@ -20,6 +20,7 @@ type SimEvent = { day: number; twin: string; rung: string; target: string | null
 
 type Ranked = {
   candidate: string;
+  chosen: number; // runs where her twin tried to leave with him, whether or not he followed
   breakouts: number;
   runs: number;
   ci_low: number;
@@ -126,7 +127,7 @@ type Simulation = {
   } | null;
   scored_runs?: number;
   models?: string[];
-  agreement?: { candidate: string; by_model: Record<string, "broke out" | "no data" | null>; agree: number; models: number }[];
+  agreement?: { candidate: string; by_model: Record<string, "chose him" | "no data" | null>; agree: number; models: number }[];
   highlights?: CandidateHighlights[];
   result?: Outcome & { events: SimEvent[] };
 };
@@ -140,7 +141,7 @@ function agreementCell(sim: Simulation, candidate: string) {
   const detail = Object.entries(a.by_model)
     .sort(([x], [y]) => x.localeCompare(y)) // stored maps may come back in any key order
     .map(([model, level]) => {
-      const verdict = level === "no data" ? "no data (its runs failed)" : level ?? "no breakout";
+      const verdict = level === "no data" ? "no data (its runs failed)" : level ?? "never chose him";
       return `${modelName(model)}: ${verdict}`;
     })
     .join("\n");
@@ -645,7 +646,8 @@ export default function Home() {
               <tr>
                 <th>#</th>
                 <th>Candidate</th>
-                <th>Broke out with him (runs where they had a date)</th>
+                <th>She tried to leave with him (runs where they had a date)</th>
+                <th>Crossed together</th>
                 <th>95% range</th>
                 <th>Models agreeing</th>
               </tr>
@@ -656,8 +658,9 @@ export default function Home() {
                   <td>{i + 1}</td>
                   <td>{r.candidate}</td>
                   <td>
-                    {r.breakouts}/{r.runs}
+                    {r.chosen}/{r.runs}
                   </td>
+                  <td>{r.breakouts}</td>
                   <td>
                     {pct(r.ci_low)}–{pct(r.ci_high)}
                   </td>

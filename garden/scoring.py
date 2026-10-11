@@ -1,8 +1,10 @@
-"""Scoring: for each man, how often her twin broke out with him when he had the chance.
+"""Scoring: for each man, how often her twin chose him when he had the chance.
 
-A man's chance is a run where he had a date with her (or broke out with her anyway): a run that ended
-before he ever met her says nothing about him. Only her willingness counts: his twin's choice only
-decides whether a run ends in a breakout at all. Excluded runs are never scored. The confidence range is
+Her twin chose him in a run when she asked him to leave the Garden with her or went to the wall with
+him, whether or not he followed: only her willingness counts. (Scoring only breakouts let his answer
+and the schedule decide: in live runs she tried to leave with two to four men in turn, and the first
+to say yes took the run.) A man's chance is a run where he had a date with her: a run that ended
+before he ever met her says nothing about him. Breakouts are reported alongside. Excluded runs are never scored. The confidence range is
 a 95% Wilson interval on that rate, which behaves sensibly with the handful of runs a demo has.
 
 (Until #65 the first sort key was the highest price level she still broke out at; price levels made no
@@ -14,6 +16,7 @@ import math
 from dataclasses import dataclass
 
 from .batch import RunRecord
+from .engine_types import LEAVING_RUNGS
 
 Z95 = 1.96
 
@@ -21,14 +24,15 @@ Z95 = 1.96
 @dataclass(frozen=True)
 class CandidateScore:
     candidate: str
-    breakouts: int   # runs where her twin broke out with him
+    chosen: int      # runs where her twin tried to leave with him (asked him, or went to the wall with him)
     runs: int        # scorable runs where he had the chance (a date with her)
-    ci_low: float
+    ci_low: float    # 95% range on chosen / runs
     ci_high: float
+    breakouts: int = 0  # runs where they actually crossed the wall together
 
     @property
     def rate(self) -> float:
-        return self.breakouts / self.runs if self.runs else 0.0
+        return self.chosen / self.runs if self.runs else 0.0
 
 
 def wilson(successes: int, n: int, z: float = Z95) -> tuple[float, float]:
@@ -52,13 +56,19 @@ def _broke_out_with(record: RunRecord, woman: str, man: str) -> bool:
     return bool(pair) and set(pair) == {woman, man}
 
 
+def _she_chose(record: RunRecord, woman: str, man: str) -> bool:
+    return _broke_out_with(record, woman, man) or any(
+        e.twin == woman and e.target == man and e.rung in LEAVING_RUNGS for e in record.result.events)
+
+
 def score(records: list[RunRecord], woman: str, candidates: list[str]) -> list[CandidateScore]:
     """Ranked best first: the low end of the confidence range, then the rate, then name."""
     scorable = [r for r in records if r.result is not None and r.result.scorable]
     scores = []
     for man in candidates:
-        chances = [r for r in scorable if r.result.had_date(woman, man) or _broke_out_with(r, woman, man)]
-        k = sum(1 for r in chances if _broke_out_with(r, woman, man))
+        chances = [r for r in scorable if r.result.had_date(woman, man) or _she_chose(r, woman, man)]
+        k = sum(1 for r in chances if _she_chose(r, woman, man))
         low, high = wilson(k, len(chances))
-        scores.append(CandidateScore(man, k, len(chances), low, high))
+        together = sum(1 for r in chances if _broke_out_with(r, woman, man))
+        scores.append(CandidateScore(man, k, len(chances), low, high, together))
     return sorted(scores, key=lambda s: (tuple(-x for x in strength(s)), s.candidate))

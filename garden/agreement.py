@@ -1,6 +1,6 @@
 """Cross-model agreement (F4): for each candidate, does each model, on its own runs, reach the same
-verdict as the other models together? A candidate's verdict is whether her twin broke out with him in
-any of those runs (see scoring). Comparing a model with the *others* (not the full pool, which
+verdict as the other models together? A candidate's verdict is whether her twin chose him (tried to
+leave with him) in any of those runs (see scoring). Comparing a model with the *others* (not the full pool, which
 includes its own runs) keeps one model from agreeing with itself.
 
 Every model that ran is listed; one with no scored runs (all errored or excluded) has no verdict, shows
@@ -14,13 +14,13 @@ from .batch import RunRecord
 from .scoring import CandidateScore, score
 
 NO_DATA = "no data"
-BROKE_OUT = "broke out"
+CHOSE = "chose him"
 
 
 @dataclass(frozen=True)
 class Agreement:
     candidate: str
-    verdict: str | None              # the whole ensemble's: BROKE_OUT, or None (never)
+    verdict: str | None              # the whole ensemble's: CHOSE, or None (never)
     by_model: dict[str, str | None]  # each model's own verdict, or NO_DATA
     agree: int                       # models whose verdict matches the other models' pooled verdict
     models: int                      # every model that ran
@@ -31,7 +31,7 @@ class Agreement:
 
 
 def _level(c: CandidateScore) -> str | None:
-    return BROKE_OUT if c.breakouts else None
+    return CHOSE if c.chosen else None
 
 
 def _verdicts(records: list[RunRecord], woman: str, men: list[str]) -> dict[str, str | None]:

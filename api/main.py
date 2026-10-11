@@ -70,7 +70,8 @@ def serialize_simulation(sim: Simulation, pool: pool_lib.PoolSetup, highlight_mo
     runs = [{"run_id": r.spec.run_id, "model": r.spec.model, "seed": r.spec.seed,
              "wall_seconds": round(r.wall_seconds, 2), "error": r.error,
              "result": serialize(r.result) if r.result else None} for r in sim.records]
-    ranking = [{"candidate": c.candidate, "breakouts": c.breakouts, "runs": c.runs, "rate": round(c.rate, 3),
+    ranking = [{"candidate": c.candidate, "chosen": c.chosen, "breakouts": c.breakouts, "runs": c.runs,
+                "rate": round(c.rate, 3),
                 "ci_low": c.ci_low, "ci_high": c.ci_high} for c in scores]
     answer_key = None
     if matched is not None:

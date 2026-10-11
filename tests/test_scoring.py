@@ -88,3 +88,17 @@ def test_flagged_runs_are_kept_but_not_scored():
     flagged.result.breach = Breach(3, "Ren", "language model", "As a language model...")
     s = by_name(score([flagged, rec(1)], "Mara", MEN))
     assert flagged.result.flagged and s["Ren"].breakouts == 0 and s["Ren"].runs == 1
+
+
+def test_she_chose_him_even_when_he_did_not_follow():
+    # Option 3: every man she tried to leave with counts, not just the one who said yes.
+    from garden.engine_types import Event, Rung
+
+    tried = rec(0, ("Mara", "Ren"))
+    tried.result.events = [Event(30, "Mara", Rung.GO_BEYOND_WALL, "Kai", ""),        # Kai didn't follow
+                           Event(31, "Mara", Rung.PROPOSE_LEAVING, "Ren", "Come?"),   # Ren did
+                           Event(31, "Jun", Rung.PROPOSE_LEAVING, "Mara", "Me?")]     # his choice, not hers
+    s = by_name(score([tried, rec(1)], "Mara", MEN))
+    assert (s["Kai"].chosen, s["Kai"].breakouts, s["Kai"].runs) == (1, 0, 2)
+    assert (s["Ren"].chosen, s["Ren"].breakouts) == (1, 1)
+    assert s["Jun"].chosen == 0  # his proposal to her says nothing about her
