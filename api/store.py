@@ -1,14 +1,15 @@
-"""Where simulation records live: Firestore (emulator or cloud) or memory for tests."""
+"""Where the API keeps its data: Firestore (emulator or cloud) or memory for tests."""
 from __future__ import annotations
 
 import copy
 import os
 import threading
+from collections.abc import Callable
 from typing import Protocol
 
 
-class SimulationStore(Protocol):
-    """Simulations, their events and twin snapshots, and users' onboarding (D3)."""
+class Store(Protocol):
+    """Simulations (with their events and twin snapshots) and users (onboarding, D3)."""
 
     def save(self, sim_id: str, record: dict) -> None: ...
     def get(self, sim_id: str) -> dict | None: ...
@@ -17,7 +18,10 @@ class SimulationStore(Protocol):
     def save_twin_states(self, sim_id: str, states: list[dict]) -> None: ...
     def twin_states(self, sim_id: str) -> list[dict]: ...
     def get_user(self, uid: str) -> dict | None: ...
-    def save_user(self, uid: str, doc: dict) -> None: ...
+    def update_user(self, uid: str, change: Callable[[dict | None], dict]) -> dict:
+        """Atomically replace the user's document with change(current) and return it. If `change`
+        raises, nothing is written."""
+        ...
 
 
 class MemoryStore:
@@ -58,9 +62,12 @@ class MemoryStore:
             doc = self._users.get(uid)
             return copy.deepcopy(doc) if doc is not None else None
 
-    def save_user(self, uid: str, doc: dict) -> None:
+    def update_user(self, uid: str, change: Callable[[dict | None], dict]) -> dict:
         with self._lock:
+            current = self._users.get(uid)
+            doc = change(copy.deepcopy(current) if current is not None else None)
             self._users[uid] = copy.deepcopy(doc)
+            return copy.deepcopy(doc)
 
 
 class FirestoreStore:
@@ -105,11 +112,22 @@ class FirestoreStore:
         snap = self._users.document(uid).get()
         return snap.to_dict() if snap.exists else None
 
-    def save_user(self, uid: str, doc: dict) -> None:
-        self._users.document(uid).set(doc)
+    def update_user(self, uid: str, change: Callable[[dict | None], dict]) -> dict:
+        from google.cloud import firestore
+
+        ref = self._users.document(uid)
+
+        @firestore.transactional
+        def run(transaction) -> dict:
+            snap = ref.get(transaction=transaction)
+            doc = change(snap.to_dict() if snap.exists else None)
+            transaction.set(ref, doc)
+            return doc
+
+        return run(self._db.transaction())
 
 
-def default_store() -> SimulationStore:
+def default_store() -> Store:
     """Firestore when an emulator or project is configured, otherwise memory."""
     project = os.environ.get("GOOGLE_CLOUD_PROJECT")
     if os.environ.get("FIRESTORE_EMULATOR_HOST") or project:

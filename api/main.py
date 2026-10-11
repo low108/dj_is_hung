@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from collections.abc import Callable
-from typing import Literal
+from typing import Literal, Protocol
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,9 +23,13 @@ from garden.scoring import score
 
 from . import onboarding
 from .auth import TokenVerifier, firebase_verifier
-from .store import SimulationStore, default_store
+from .store import Store, default_store
 
 log = logging.getLogger(__name__)
+
+
+class TextModel(Protocol):
+    def sample_text(self, prompt: str, **kwargs) -> str: ...
 
 
 class StartSimulation(BaseModel):
@@ -83,15 +87,15 @@ def serialize_simulation(sim: Simulation, pool: pool_lib.PoolSetup, highlight_mo
             "result": runs[0]["result"] if runs else None}  # first run kept for the single-result page
 
 
-def create_app(store: SimulationStore | None = None, log_runs: bool = False,
+def create_app(store: Store | None = None, log_runs: bool = False,
                replay_dir: Path | None = None, verify_token: TokenVerifier | None = None,
-               followup_models: Callable[[], object] | None = None) -> FastAPI:
+               followup_model: Callable[[], TextModel | None] | None = None) -> FastAPI:
     """`replay_dir`: where finished runs are saved for replay (None: not saved, and no replays listed).
-    `verify_token` turns a sign-in token into a user id (default: Firebase Auth). `followup_models()` gives
+    `verify_token` turns a sign-in token into a user id (default: Firebase Auth). `followup_model()` gives
     the model that asks onboarding follow-ups (default: Gemini Flash when a key is set; None: templates)."""
     app = FastAPI(title="dj_is_hung API")
     app.state.verify_token = verify_token or (lambda token: firebase_verifier()(token))
-    app.state.followup_model = followup_models or demo.make_followup_model
+    app.state.followup_model = followup_model or demo.make_followup_model
     app.include_router(onboarding.router)
     app.state.log_runs = log_runs
     app.state.replay_dir = replay_dir

@@ -1,6 +1,13 @@
 "use client";
 
-import { GoogleAuthProvider, onAuthStateChanged, signInWithRedirect, signOut, type User } from "firebase/auth";
+import {
+  GoogleAuthProvider,
+  getRedirectResult,
+  onAuthStateChanged,
+  signInWithRedirect,
+  signOut,
+  type User,
+} from "firebase/auth";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { firebaseAuth } from "../firebase";
@@ -16,6 +23,7 @@ type Progress = {
   answered: number;
   complete: boolean;
   current: { id: string; theme: string; text: string; followup: string | null; number: number } | null;
+  max_chars: number;
 };
 
 export default function Onboarding() {
@@ -26,8 +34,8 @@ export default function Onboarding() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function call(path: string, body?: unknown): Promise<Progress> {
-    const token = await user!.getIdToken();
+  async function call(path: string, body?: unknown, who: User | null | undefined = user): Promise<Progress> {
+    const token = await who!.getIdToken();
     const res = await fetch(`${API_URL}${path}`, {
       method: body === undefined ? "GET" : "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -40,22 +48,40 @@ export default function Onboarding() {
     return res.json();
   }
 
-  async function run(step: () => Promise<Progress>) {
+  /** Runs one API step; true if it worked (the error is shown otherwise). */
+  async function run(step: () => Promise<Progress>): Promise<boolean> {
     setBusy(true);
     setError(null);
     try {
       setProgress(await step());
+      return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      return false;
     } finally {
       setBusy(false);
     }
   }
 
-  useEffect(() => onAuthStateChanged(firebaseAuth(), setUser), []);
   useEffect(() => {
-    if (user) run(() => call("/me/onboarding"));
-    else setProgress(null);
+    getRedirectResult(firebaseAuth()).catch((e) => setError(`Sign-in failed: ${e.message}`));
+    return onAuthStateChanged(firebaseAuth(), setUser);
+  }, []);
+
+  useEffect(() => {
+    // A new account starts clean, and a slow load for the previous one is ignored.
+    setProgress(null);
+    setDraft("");
+    setAgreed(false);
+    setError(null);
+    if (!user) return;
+    let stale = false;
+    call("/me/onboarding", undefined, user)
+      .then((p) => !stale && setProgress(p))
+      .catch((e) => !stale && setError(e instanceof Error ? e.message : String(e)));
+    return () => {
+      stale = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reload only when the signed-in user changes
   }, [user]);
 
@@ -63,8 +89,7 @@ export default function Onboarding() {
 
   async function submit() {
     if (!current || !draft.trim()) return;
-    await run(() => call("/me/answers", { question_id: current.id, text: draft }));
-    setDraft("");
+    if (await run(() => call("/me/answers", { question_id: current.id, text: draft }))) setDraft("");
   }
 
   return (
@@ -114,7 +139,7 @@ export default function Onboarding() {
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             rows={5}
-            maxLength={2000}
+            maxLength={progress.max_chars}
             aria-label={current.followup ?? current.text}
             placeholder="Take your time. A few sentences is perfect."
           />

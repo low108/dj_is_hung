@@ -11,7 +11,11 @@ from collections.abc import Callable
 
 from fastapi import HTTPException, Request
 
-TokenVerifier = Callable[[str], str]  # token -> uid; raises on a bad token
+TokenVerifier = Callable[[str], str]  # token -> uid; raises InvalidToken (or ValueError) on a bad token
+
+
+class InvalidToken(ValueError):
+    """The token is missing, malformed, expired or revoked: the caller must sign in again."""
 
 
 @functools.cache
@@ -26,7 +30,10 @@ def firebase_verifier() -> TokenVerifier:
         app = firebase_admin.initialize_app(options={"projectId": project})
 
     def verify(token: str) -> str:
-        return auth.verify_id_token(token, app=app)["uid"]
+        try:
+            return auth.verify_id_token(token, app=app)["uid"]
+        except (auth.InvalidIdTokenError, auth.ExpiredIdTokenError, auth.RevokedIdTokenError) as e:
+            raise InvalidToken(str(e)) from e
 
     return verify
 
@@ -39,5 +46,5 @@ def current_user(request: Request) -> str:
         raise HTTPException(401, "sign in first")
     try:
         return request.app.state.verify_token(token)
-    except Exception as e:
+    except ValueError as e:  # a bad token; anything else (e.g. no project configured) is a server error
         raise HTTPException(401, "your sign-in has expired; sign in again") from e

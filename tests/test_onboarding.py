@@ -22,7 +22,7 @@ class Asker:
 
 def client(store=None, model=None):
     # In tests the bearer token *is* the user id.
-    app = create_app(store or MemoryStore(), verify_token=lambda token: token, followup_models=lambda: model)
+    app = create_app(store or MemoryStore(), verify_token=lambda token: token, followup_model=lambda: model)
     return TestClient(app, headers={"Authorization": "Bearer user-1"})
 
 
@@ -36,13 +36,13 @@ def answer(c, text=LONG, qid=None):
 
 
 def test_signing_in_is_required():
-    anonymous = TestClient(create_app(MemoryStore(), verify_token=lambda t: t, followup_models=lambda: None))
+    anonymous = TestClient(create_app(MemoryStore(), verify_token=lambda t: t, followup_model=lambda: None))
     assert anonymous.get("/me/onboarding").status_code == 401
 
     def reject(token):
         raise ValueError("bad token")
 
-    assert TestClient(create_app(MemoryStore(), verify_token=reject)).get(
+    assert TestClient(create_app(MemoryStore(), verify_token=reject, followup_model=lambda: None)).get(
         "/me/onboarding", headers={"Authorization": "Bearer x"}).status_code == 401
 
 
@@ -122,6 +122,37 @@ def test_users_do_not_see_each_others_answers():
     a = client(store)
     consent(a)
     answer(a)
-    b = TestClient(create_app(store, verify_token=lambda t: t, followup_models=lambda: None),
+    b = TestClient(create_app(store, verify_token=lambda t: t, followup_model=lambda: None),
                    headers={"Authorization": "Bearer user-2"})
     assert b.get("/me/onboarding").json()["answered"] == 0 and b.get("/me/onboarding").json()["consent"] is None
+
+
+def test_consent_to_an_older_text_must_be_given_again(monkeypatch):
+    store = MemoryStore()
+    c = client(store)
+    consent(c)
+    monkeypatch.setattr(qa, "CONSENT_VERSION", "newer")
+    assert c.get("/me/onboarding").json()["consent"] is None
+    assert answer(c, qid=qa.QUESTIONS[0].id).status_code == 403
+
+
+def test_a_repeated_submit_cannot_overwrite_an_answer():
+    c = client()
+    consent(c)
+    first = qa.QUESTIONS[0].id
+    assert answer(c, LONG, qid=first).status_code == 200
+    assert answer(c, "A different answer entirely, sent by a double click.", qid=first).status_code == 409
+
+
+def test_a_follow_up_pending_does_not_count_as_answered():
+    c = client(model=Asker())
+    consent(c)
+    assert answer(c, "Beach.").json()["answered"] == 0
+
+
+def test_the_answer_limit_is_shared_with_the_screen():
+    c = client()
+    consent(c)
+    assert c.get("/me/onboarding").json()["max_chars"] == qa.MAX_CHARS
+    too_long = "x" * (qa.MAX_CHARS + 1)
+    assert c.post("/me/answers", json={"question_id": qa.QUESTIONS[0].id, "text": too_long}).status_code == 422
