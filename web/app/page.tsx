@@ -18,16 +18,8 @@ type Scenario = "breakout" | "unrequited" | "timeout" | "excluded";
 
 type SimEvent = { day: number; twin: string; rung: string; target: string | null; say: string };
 
-type Price = "low" | "high";
-
-const PRICE_LABEL: Record<Price, string> = {
-  high: "Gave up a lot (high price)",
-  low: "Only when it cost little (low price)",
-};
-
 type Ranked = {
   candidate: string;
-  price: Price | null;
   breakouts: number;
   runs: number;
   ci_low: number;
@@ -53,7 +45,6 @@ type CandidateHighlights = {
   pattern: string;
   highlights: {
     run_id: string;
-    price: Price;
     day: number;
     kind: string;
     from_her: boolean;
@@ -81,7 +72,7 @@ type ReplaySummary = {
   sim_id: string;
   run_id: string;
   model: string;
-  price: Price;
+  price?: string; // saved before price levels were removed (#65)
   seed: number;
   scenario: Scenario | null;
   featured: boolean;
@@ -100,19 +91,20 @@ type Replay = ReplaySummary & Outcome & {
 const replayKey = (r: { sim_id: string; run_id: string }) => `${r.sim_id}/${r.run_id}`;
 const modelName = (model: string) => model.split(":")[1] ?? model;
 
-/** The run picker's filters: model × price level × scenario ("" = any). */
-type ReplayFilter = { model: string; price: string; scenario: string };
-const ANY: ReplayFilter = { model: "", price: "", scenario: "" };
+/** The run picker's filters: model × scenario ("" = any). */
+type ReplayFilter = { model: string; scenario: string };
+const ANY: ReplayFilter = { model: "", scenario: "" };
 const scenarioOf = (r: ReplaySummary) => r.scenario ?? "live";
 const matches = (r: ReplaySummary, f: ReplayFilter) =>
-  (!f.model || r.model === f.model) && (!f.price || r.price === f.price) && (!f.scenario || scenarioOf(r) === f.scenario);
+  (!f.model || r.model === f.model) && (!f.scenario || scenarioOf(r) === f.scenario);
 const distinct = (values: string[]) => [...new Set(values)].sort();
 
 function replayLabel(r: ReplaySummary): string {
   const when = new Date(r.created_at).toLocaleString([], { dateStyle: "short", timeStyle: "short" });
   const model = r.scenario ? `scripted (${r.scenario})` : modelName(r.model);
   const mark = r.outcome === "breakout" ? "★ breakout" : r.outcome;
-  return `${when} · ${model} · ${r.price} price · seed ${r.seed} · ${mark} day ${r.day}`;
+  const price = r.price ? ` · ${r.price} price` : "";
+  return `${when} · ${model}${price} · seed ${r.seed} · ${mark} day ${r.day}`;
 }
 
 type Simulation = {
@@ -132,14 +124,12 @@ type Simulation = {
   } | null;
   scored_runs?: number;
   models?: string[];
-  agreement?: { candidate: string; by_model: Record<string, Price | "no data" | null>; agree: number; models: number }[];
+  agreement?: { candidate: string; by_model: Record<string, "broke out" | "no data" | null>; agree: number; models: number }[];
   highlights?: CandidateHighlights[];
   result?: Outcome & { events: SimEvent[] };
 };
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
-
-const priceLabel = (r: Ranked): string => (r.price ? PRICE_LABEL[r.price] : "No breakout");
 
 /** "2 of 3": models whose own verdict matches the other models'; each model's verdict on hover. */
 function agreementCell(sim: Simulation, candidate: string) {
@@ -148,7 +138,7 @@ function agreementCell(sim: Simulation, candidate: string) {
   const detail = Object.entries(a.by_model)
     .sort(([x], [y]) => x.localeCompare(y)) // stored maps may come back in any key order
     .map(([model, level]) => {
-      const verdict = level === "no data" ? "no data (its runs failed)" : level ? `${level} price` : "no breakout";
+      const verdict = level === "no data" ? "no data (its runs failed)" : level ?? "no breakout";
       return `${modelName(model)}: ${verdict}`;
     })
     .join("\n");
@@ -490,7 +480,6 @@ export default function Home() {
         {(
           [
             ["model", "Model", distinct(replays.map((r) => r.model)), modelName],
-            ["price", "Price", distinct(replays.map((r) => r.price)), (v: string) => `${v} price`],
             ["scenario", "Scenario", distinct(replays.map(scenarioOf)), (v: string) => v],
           ] as const
         ).map(([key, label, options, show]) => (
@@ -619,8 +608,9 @@ export default function Home() {
         <section className="result" data-testid="result">
           <h2>{headline(replaying)}</h2>
           <p className="meta">
-            Replay of run {replaying.run_id} from simulation {replaying.sim_id} ({replaying.model}, {replaying.price}{" "}
-            price, seed {replaying.seed}). Played from stored events; nothing was simulated again.
+            Replay of run {replaying.run_id} from simulation {replaying.sim_id} ({replaying.model}
+            {replaying.price ? `, ${replaying.price} price` : ""}, seed {replaying.seed}). Played from stored events;
+            nothing was simulated again.
           </p>
         </section>
       )}
@@ -651,8 +641,8 @@ export default function Home() {
               <tr>
                 <th>#</th>
                 <th>Candidate</th>
-                <th>Highest price she still broke out at</th>
-                <th>Breakout rate at that price (95% range)</th>
+                <th>Broke out with him (runs where they had a date)</th>
+                <th>95% range</th>
                 <th>Models agreeing</th>
               </tr>
             </thead>
@@ -661,9 +651,11 @@ export default function Home() {
                 <tr key={r.candidate}>
                   <td>{i + 1}</td>
                   <td>{r.candidate}</td>
-                  <td>{priceLabel(r)}</td>
                   <td>
-                    {r.breakouts}/{r.runs} ({pct(r.ci_low)}–{pct(r.ci_high)})
+                    {r.breakouts}/{r.runs}
+                  </td>
+                  <td>
+                    {pct(r.ci_low)}–{pct(r.ci_high)}
                   </td>
                   <td>{agreementCell(sim, r.candidate)}</td>
                 </tr>

@@ -8,7 +8,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .batch import PriceLevel, Simulation
+from .batch import Simulation
 from .llm import CHOICE_RETRY_STEP, CHOICE_TEMPERATURE, TEXT_TEMPERATURE
 from .paths import DATA_DIR
 from .prompts import save_prompt_version
@@ -46,7 +46,7 @@ def write_simulation(sim_id: str, sim: Simulation, woman: str, men: list[str], *
             # model ids are pinned (e.g. gemini-3.5-flash), so the id is the version
             "provider": spec.model.partition(":")[0], "model": spec.model.partition(":")[2] or spec.model,
             "temperature_text": TEXT_TEMPERATURE, "temperature_choice": CHOICE_TEMPERATURE,
-            "temperature_choice_retry_step": CHOICE_RETRY_STEP, "price_level": spec.price.value,
+            "temperature_choice_retry_step": CHOICE_RETRY_STEP,
             # outcome
             "outcome": res.outcome.value if res else "error", "breakout_pair": list(res.pair) if res and res.pair else None,
             "day_ended": res.day if res else None, "scorable": bool(res and res.scorable),
@@ -64,8 +64,8 @@ def write_simulation(sim_id: str, sim: Simulation, woman: str, men: list[str], *
                          **{f"rating_{k}": r.ratings.get(k) for k in RATINGS}} for r in res.reflections]
 
     scores = [{"sim_id": sim_id, "woman": woman, "candidate": c.candidate,
-               "max_price_level": c.price.value if c.price else None,
-               **_by_price_columns(c.breakouts_by_price), "ci_low": c.ci_low, "ci_high": c.ci_high}
+               "breakouts": c.breakouts, "runs": c.runs, "rate": round(c.rate, 3),
+               "ci_low": c.ci_low, "ci_high": c.ci_high}
               for c in score(list(sim.records), woman, men)]
 
     _write(directory / "runs.jsonl", runs)
@@ -74,12 +74,3 @@ def write_simulation(sim_id: str, sim: Simulation, woman: str, men: list[str], *
     _write(directory / "scores.jsonl", scores)
     return directory
 
-
-def _by_price_columns(by_price: dict[str, tuple[int, int]]) -> dict:
-    """breakouts_low, runs_low, rate_low, breakouts_high, ... (fixed columns, one set per price level)."""
-    out = {}
-    for price in PriceLevel:
-        k, n = by_price.get(price.value, (0, 0))
-        out |= {f"breakouts_{price.value}": k, f"runs_{price.value}": n,
-                f"rate_{price.value}": round(k / n, 3) if n else None}
-    return out

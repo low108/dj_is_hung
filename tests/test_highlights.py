@@ -7,7 +7,7 @@ from api.main import create_app
 from api.store import MemoryStore
 from garden import Action, Rung, demo, highlights
 from garden.fake_model import ScenarioModel
-from garden.batch import PriceLevel, plan, run_simulation
+from garden.batch import plan, run_simulation
 from garden.scoring import score
 
 WOMAN, MAN = demo.WOMAN, demo.MAN
@@ -31,7 +31,7 @@ class Captioner:
 
 
 def simulate(seeds=(0, 1)):
-    specs = plan(["fake:a"], list(PriceLevel), list(seeds))
+    specs = plan(["fake:a"], list(seeds))
     sim = run_simulation(specs, demo.POOL, breakout)
     return list(sim.records), score(list(sim.records), WOMAN, demo.MEN)
 
@@ -40,9 +40,8 @@ def test_each_top_candidate_gets_three_to_four_highlights_and_an_exact_pattern_l
     records, scores = simulate()
     [ren] = highlights.for_simulation(records, scores, WOMAN, demo.PERSONAS)
     assert ren.candidate == MAN and 3 <= len(ren.highlights) <= 4
-    assert ren.pattern == "Her twin gave up her Pairing Day for his twin in 2 of 2 runs where it cost her the most."
+    assert ren.pattern == "Her twin crossed the wall with his twin in 2 of the 2 runs where they had a date."
     assert [h.kind for h in ren.highlights[:2]] == ["breakout", "go_beyond_wall"]
-    assert ren.highlights[0].price == "high"
 
 
 def test_every_highlight_is_labelled_as_the_twins():
@@ -119,7 +118,7 @@ def test_the_model_never_sees_what_the_twins_said():
                 return Action(action.rung, action.target, "As a nurse in Chicago I rarely get evenings off.")
             return action
 
-    specs = plan(["fake:a"], list(PriceLevel), [0])
+    specs = plan(["fake:a"], [0])
     sim = run_simulation(specs, demo.POOL, lambda spec: Chatty("breakout", WOMAN, MAN))
     records = list(sim.records)
     model = Captioner([])

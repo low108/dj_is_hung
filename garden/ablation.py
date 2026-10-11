@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 
-from .batch import PriceLevel, RunSpec, Simulation, plan, run_simulation
+from .batch import RunSpec, Simulation, plan, run_simulation
 from .engine import Model
 from .engine_types import Twin
 from .verdict import GATED_RUNGS
@@ -26,7 +26,6 @@ class Step:
     index: int
     name: str
     switches: Switches
-    prices: tuple[PriceLevel, ...] = (PriceLevel.HIGH,)
 
 
 LADDER = (
@@ -34,8 +33,6 @@ LADDER = (
     Step(1, "+ longing", Switches(standing_enabled=False, longing_enabled=True, gate_enabled=False)),
     Step(2, "+ standing and ladder", Switches(standing_enabled=True, longing_enabled=True, gate_enabled=False)),
     Step(3, "+ verdict gate", Switches(standing_enabled=True, longing_enabled=True, gate_enabled=True)),
-    Step(4, "+ price levels", Switches(standing_enabled=True, longing_enabled=True, gate_enabled=True),
-         (PriceLevel.LOW, PriceLevel.HIGH)),
 )
 
 
@@ -89,7 +86,7 @@ def run_ladder(twins: tuple[Twin, ...], make_model: Callable[[RunSpec], Model], 
     Extra keyword arguments go to WorldConfig (e.g. max_days)."""
     out = []
     for step in steps:
-        specs = plan([model_id], list(step.prices), seeds)
+        specs = plan([model_id], seeds)
         sim = run_simulation(specs, twins, make_model, **(config | asdict(step.switches)))
         out.append((summarise(step, sim), sim))
     return out

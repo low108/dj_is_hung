@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from api.main import create_app
 from api.store import MemoryStore
 from garden import Action, Rung, ScriptedModel, Twin, WorldConfig, run_world
-from garden.batch import PriceLevel, featured_spec, plan
+from garden.batch import featured_spec, plan
 from garden.feed import SCHEMA, FeedCursor, validate
 
 WORLD = (Twin("Mara", "f"), Twin("Ren", "m"), Twin("Jun", "m"))
@@ -62,10 +62,9 @@ def test_validate_rejects_a_broken_event():
     assert set(good) == set(SCHEMA)
 
 
-def test_the_featured_run_is_the_first_high_price_run():
-    specs = plan(["fake:a", "fake:b"], list(PriceLevel), [0, 1])
-    featured = featured_spec(specs)
-    assert featured.price is PriceLevel.HIGH and featured == next(s for s in specs if s.price is PriceLevel.HIGH)
+def test_the_featured_run_is_the_first_run():
+    specs = plan(["fake:a", "fake:b"], [0, 1])
+    assert featured_spec(specs) == specs[0] and featured_spec([]) is None
 
 
 class Slow(ScriptedModel):

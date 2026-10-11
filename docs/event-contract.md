@@ -7,7 +7,7 @@ Every twin action and every Coordinator announcement in a run becomes one **Feed
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `run_id` | string | The run (live: the featured run, the first high-price one) |
+| `run_id` | string | The run (live: the featured run, the first one) |
 | `seq` | int | 0, 1, 2… with no gaps: the cursor for polling |
 | `day` | int | Simulated day, from 1 |
 | `tick` | int | Order within the day |

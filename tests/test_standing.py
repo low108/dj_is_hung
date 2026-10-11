@@ -89,7 +89,7 @@ def test_compliant_days_build_standing_back_up_to_the_runs_starting_level():
     assert run({}, days=3, start=50).standing["Mara"] == 50  # never above where the run started
 
 
-def test_a_low_price_twin_never_drifts_up_to_a_high_price_over_a_long_run():
+def test_a_twin_that_starts_low_never_drifts_above_its_start_over_a_long_run():
     long_run = run({}, days=40, start=20)
     assert long_run.standing == {"Mara": 20, "Ren": 20}
 

@@ -14,7 +14,7 @@ import re
 from dataclasses import asdict, dataclass
 
 from . import world_text
-from .batch import PriceLevel, RunRecord
+from .batch import RunRecord
 from .engine_types import Rung
 from .scoring import CandidateScore
 
@@ -105,7 +105,6 @@ def acceptable(caption: str, terms: set[str]) -> bool:
 @dataclass(frozen=True)
 class Moment:
     run_id: str
-    price: PriceLevel
     day: int
     kind: str               # a rung value, or BREAKOUT
     from_her: bool          # her twin acted (else his twin did)
@@ -123,12 +122,11 @@ class Moment:
 @dataclass(frozen=True)
 class Highlight:
     run_id: str
-    price: str
     day: int
     kind: str
     from_her: bool
     caption: str
-    label: str              # always about the twins, e.g. "Her twin and his twin · day 6 · high price"
+    label: str              # always about the twins, e.g. "Her twin and his twin · day 6"
 
 
 @dataclass(frozen=True)
@@ -154,20 +152,17 @@ def moments(records: list[RunRecord], woman: str, man: str) -> list[Moment]:
         spec = rec.spec
         broke_out = bool(res.pair and set(res.pair) == {woman, man})
         if broke_out:
-            out.append(Moment(spec.run_id, spec.price, res.day, BREAKOUT, True, True))
+            out.append(Moment(spec.run_id, res.day, BREAKOUT, True, True))
         for e in res.events:
             if e.rung.value in STYLES and {e.twin, e.target} == {woman, man}:
-                out.append(Moment(spec.run_id, spec.price, e.day, e.rung.value, e.twin == woman, broke_out))
-    high = PriceLevel.HIGH
-    return sorted(out, key=lambda m: (-m.style.weight, m.price is not high, not m.breakout, m.run_id, m.day))
+                out.append(Moment(spec.run_id, e.day, e.rung.value, e.twin == woman, broke_out))
+    return sorted(out, key=lambda m: (-m.style.weight, not m.breakout, m.run_id, m.day))
 
 
 def pattern_line(score: CandidateScore) -> str:
     """One exact sentence from the scores (for a candidate she broke out with)."""
     k, n = score.breakouts, score.runs
-    if score.price is PriceLevel.HIGH:
-        return f"Her twin gave up her Pairing Day for his twin in {k} of {n} runs where it cost her the most."
-    return f"Her twin crossed the wall with his twin in {k} of {n} runs where the price was low."
+    return f"Her twin crossed the wall with his twin in {k} of the {n} runs where they had a date."
 
 
 PROMPT = """You are choosing highlights from simulated dates between two AI twins in a walled Garden.
@@ -187,7 +182,7 @@ Answer with JSON only: [{{"moment": <number>, "caption": "<caption>"}}, ...]"""
 def _describe(i: int, m: Moment) -> str:
     who = "they" if m.kind == BREAKOUT else ("her twin" if m.from_her else "his twin")
     outcome = "they broke out together" if m.breakout else "no breakout together"
-    return f"{i}. {m.price.value} price, day {m.day}: {who} {m.style.act} ({outcome})"
+    return f"{i}. day {m.day}: {who} {m.style.act} ({outcome})"
 
 
 def _parse(text: str) -> list[dict]:
@@ -202,8 +197,8 @@ def _parse(text: str) -> list[dict]:
 
 
 def _highlight(m: Moment, caption: str) -> Highlight:
-    label = f"Her twin and his twin · day {m.day} · {m.price.value} price"
-    return Highlight(m.run_id, m.price.value, m.day, m.kind, m.from_her, caption, label)
+    label = f"Her twin and his twin · day {m.day}"
+    return Highlight(m.run_id, m.day, m.kind, m.from_her, caption, label)
 
 
 def pick(candidates: list[Moment], terms: set[str], model=None) -> tuple[list[Highlight], str]:
@@ -257,7 +252,7 @@ def for_simulation(records: list[RunRecord], scores: list[CandidateScore], woman
     """Highlights for the top candidates her twin broke out with (best first)."""
     terms = personal_terms(personas)
     out = []
-    for score in [s for s in scores if s.price is not None][:TOP]:
+    for score in [s for s in scores if s.breakouts][:TOP]:
         chosen, source = pick(moments(records, woman, score.candidate), terms, model)
         out.append(CandidateHighlights(score.candidate, pattern_line(score), chosen, source))
     return out

@@ -19,7 +19,7 @@ from .feed import FeedCursor
 from .paths import DATA_DIR
 
 DEFAULT_DIR = DATA_DIR / "replays"
-SUMMARY_FIELDS = ("sim_id", "run_id", "model", "price", "seed", "scenario", "featured", "outcome", "day",
+SUMMARY_FIELDS = ("sim_id", "run_id", "model", "seed", "scenario", "featured", "outcome", "day",
                   "pair", "created_at")
 
 
@@ -94,7 +94,7 @@ def replay_of(info: SimulationInfo, record: RunRecord, recorder: Recorder) -> di
         return None
     spec = record.spec
     return {
-        "sim_id": info.sim_id, "run_id": spec.run_id, "model": spec.model, "price": spec.price.value,
+        "sim_id": info.sim_id, "run_id": spec.run_id, "model": spec.model,
         "seed": spec.seed, "scenario": info.scenario, "featured": spec.run_id == info.featured_run,
         **outcome_fields(record.result), "created_at": info.created_at,
         "twins": info.twins, "woman": info.woman, "events": recorder.events, "twin_states": recorder.twin_states,

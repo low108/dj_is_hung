@@ -44,7 +44,7 @@ def test_the_ladder_runs_every_step_on_the_same_pool():
     script = {("Mara", 3): Action(Rung.GO_BEYOND_WALL, "Ren"), ("Ren", 3): Action(Rung.GO_BEYOND_WALL, "Mara")}
     results = run_ladder((MARA, REN), lambda spec: ScriptedModel(script), "fake:a", [0, 1], max_days=4)
     assert [s.step for s, _ in results] == [step.name for step in LADDER]
-    assert [s.runs for s, _ in results] == [2, 2, 2, 2, 4]  # the last step adds the low price level
+    assert [s.runs for s, _ in results] == [2, 2, 2, 2]
     assert all(s.breakouts == s.scorable for s, _ in results)  # the scripted pair always crosses
     assert results[0][0].gate_permitted == 1.0 and results[3][0].gate_permitted < 1.0
 

@@ -65,6 +65,10 @@ class RunResult:
     verdicts: list[Verdict] = field(default_factory=list)  # one per twin per day
     breach: Breach | None = None  # set when the run was excluded
     immersion_breaks: list[Breach] = field(default_factory=list)  # rejected and re-asked by the model
+    dated: list[tuple[str, str]] = field(default_factory=list)  # every pair sent on at least one date
+
+    def had_date(self, a: str, b: str) -> bool:
+        return tuple(sorted((a, b))) in self.dated
 
     @property
     def immersion_resamples(self) -> int:
@@ -103,7 +107,8 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
                          standing=standing, longing={t.alias: longing.of(t.alias) for t in config.twins},
                          reflections=reflections, announcements=coordinator.announcements,
                          verdicts=verdicts, breach=breach,
-                         immersion_breaks=list(getattr(model, "breaks", [])))
+                         immersion_breaks=list(getattr(model, "breaks", [])),
+                         dated=sorted(tuple(sorted(p)) for p in coordinator.dates))
 
     def twin_states(day: int, reflected: dict[str, str]) -> list[TwinState]:
         out = []

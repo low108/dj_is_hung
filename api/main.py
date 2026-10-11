@@ -18,7 +18,7 @@ from garden import agreement, demo, highlights, llm, replay
 from garden import twin_builder as tb
 from garden import pools as pool_lib
 from garden import speed_dating as sd
-from garden.batch import PriceLevel, Simulation, featured_spec, plan, run_simulation
+from garden.batch import Simulation, featured_spec, plan, run_simulation
 from garden.runlog import write_simulation
 from garden.scoring import score
 
@@ -34,11 +34,10 @@ class TextModel(Protocol):
 
 
 class StartSimulation(BaseModel):
-    """models x price levels x seeds runs. 'fake:*' models are scripted (no API calls)."""
+    """models x seeds runs. 'fake:*' models are scripted (no API calls)."""
 
     scenario: Literal["breakout", "unrequited", "timeout", "excluded"] = "breakout"  # for fake models
     models: list[str] = demo.FAKE_MODELS  # scripted stand-ins; [demo.ENSEMBLE_ALIAS] = the real ensemble
-    prices: list[PriceLevel] = list(PriceLevel)
     seeds: list[int] = [0, 1]
     max_days: int | None = None  # a safety cap; a run ends when every man has had his dates (or a breakout)
     pool_iid: int | None = None  # a real speed-dating woman (see GET /pools); None = placeholder demo pool
@@ -70,13 +69,11 @@ def serialize_simulation(sim: Simulation, pool: pool_lib.PoolSetup, highlight_mo
     woman, men, matched = pool.woman, pool.men, pool.matched
     scores = score(list(sim.records), woman, men)
     picked = highlights.for_simulation(list(sim.records), scores, woman, pool.personas, highlight_model)
-    runs = [{"run_id": r.spec.run_id, "model": r.spec.model, "price": r.spec.price.value, "seed": r.spec.seed,
+    runs = [{"run_id": r.spec.run_id, "model": r.spec.model, "seed": r.spec.seed,
              "wall_seconds": round(r.wall_seconds, 2), "error": r.error,
              "result": serialize(r.result) if r.result else None} for r in sim.records]
-    ranking = [{"candidate": c.candidate, "price": c.price.value if c.price else None, "breakouts": c.breakouts,
-                "runs": c.runs, "ci_low": c.ci_low, "ci_high": c.ci_high,
-                "by_price": {p: list(v) for p, v in c.breakouts_by_price.items()}}
-               for c in scores]
+    ranking = [{"candidate": c.candidate, "breakouts": c.breakouts, "runs": c.runs, "rate": round(c.rate, 3),
+                "ci_low": c.ci_low, "ci_high": c.ci_high} for c in scores]
     answer_key = None
     if matched is not None:
         check = pool_lib.check_ranking(scores, matched)
@@ -137,7 +134,7 @@ def create_app(store: Store | None = None, log_runs: bool = False,
     def start_simulation(req: StartSimulation, request: Request) -> dict:
         sim_id = uuid.uuid4().hex[:12]
         models = list(llm.ENSEMBLE) if req.models == [demo.ENSEMBLE_ALIAS] else req.models
-        specs = plan(models, req.prices, req.seeds)
+        specs = plan(models, req.seeds)
         if req.my_twin:
             pool = demo.with_her_twin(*tb.garden_inputs(twin.reviewed_twin(request, current_user(request))))
         else:
