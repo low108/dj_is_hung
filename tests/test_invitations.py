@@ -16,9 +16,9 @@ class Recording(ScriptedModel):
         return super().choose_action(twin, day, others, situation)
 
 
-def run(script, days=8):
+def run(script, days=8, world=WORLD):
     model = Recording(script)
-    return run_world(WorldConfig(WORLD, max_days=days, seed=2), model), model
+    return run_world(WorldConfig(world, max_days=days, seed=2), model), model
 
 
 def test_a_proposal_answered_at_the_wall_within_the_window_is_a_breakout():
@@ -53,9 +53,8 @@ def test_the_invited_twin_hears_about_it_while_it_is_open():
 
 def test_the_inviters_latest_choice_wins():
     # Ren asks Mara to leave, then changes his mind and asks Ada instead.
-    world = (*WORLD, Twin("Ada", "f"))
-    script = {("Ren", 2): Action(LEAVE, "Mara"), ("Ren", 3): Action(LEAVE, "Ada"), ("Mara", 4): Action(WALL, "Ren")}
-    result = run_world(WorldConfig(world, max_days=8, seed=2), Recording(script))
+    result, _ = run({("Ren", 2): Action(LEAVE, "Mara"), ("Ren", 3): Action(LEAVE, "Ada"),
+                     ("Mara", 4): Action(WALL, "Ren")}, world=(*WORLD, Twin("Ada", "f")))
     assert result.outcome is OutcomeKind.TIMEOUT  # his invitation to Mara was withdrawn on day 3
 
 

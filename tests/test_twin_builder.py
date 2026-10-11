@@ -109,7 +109,7 @@ def test_rebuilding_keeps_the_users_edits():
     assert twin["rebelliousness"] == 0.1
 
 
-@pytest.mark.parametrize("rebel,expected", [(0.0, 0.63), (0.5, 0.55), (1.0, 0.47)])
+@pytest.mark.parametrize("rebel,expected", [(0.0, 0.59), (0.5, 0.55), (1.0, 0.51)])
 def test_rebelliousness_sets_the_verdict_threshold(rebel, expected):
     assert tb.threshold(rebel) == expected
 
@@ -133,7 +133,7 @@ def test_her_persona_and_threshold_reach_the_world():
     her = tb.new_twin("u", extraction(rebel=1.0), "fake", "now")
     pool = demo.with_her_twin(*tb.garden_inputs(her))
     assert pool.personas[her["alias"]].startswith("I remember moment")
-    assert pool.thresholds == ((her["alias"], 0.47),) and pool.woman == her["alias"]
+    assert pool.thresholds == ((her["alias"], 0.51),) and pool.woman == her["alias"]
 
 
 def test_a_my_twin_simulation_needs_sign_in_and_a_twin():
@@ -169,7 +169,7 @@ def test_edited_traits_override_the_extraction_and_set_her_threshold():
     complete_qa(c)
     assert c.post("/me/twin").json()["threshold"] == tb.threshold(0.8)
     twin = c.put("/me/twin/traits", json={"rebelliousness": 0.0, "values": ["loyalty"]}).json()
-    assert twin["rebelliousness"] == 0.0 and twin["values"] == ["loyalty"] and twin["threshold"] == 0.63
+    assert twin["rebelliousness"] == 0.0 and twin["values"] == ["loyalty"] and twin["threshold"] == 0.59
     assert twin["dealbreakers"] == ["dishonesty"] and twin["traits_edited"] == ["rebelliousness", "values"]
     assert c.put("/me/twin/traits", json={"rebelliousness": 3}).status_code == 422
 

@@ -127,7 +127,7 @@ def alias_for(uid: str) -> str:
     return ALIASES[int(hashlib.sha256(uid.encode()).hexdigest(), 16) % len(ALIASES)]
 
 
-REBEL_SPREAD = 0.08  # how far a twin's threshold can move from the default either way
+REBEL_SPREAD = 0.04  # in proportion to the live band (~0.49-0.56); how far a twin's threshold can move from the default either way
 
 
 def threshold(rebelliousness: float) -> float:

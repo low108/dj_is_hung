@@ -24,9 +24,12 @@ T = TypeVar("T")
 
 
 def offered_options(situation: Situation | None) -> tuple[str, ...]:
-    """Every action, minus proposing to leave and the wall unless the verdict gate permits them."""
+    """Every action, minus proposing to leave and the wall unless the verdict gate permits them, and
+    minus romance when there's nobody it could aim at."""
     permitted = bool(situation and situation.may_break_rules)
-    return tuple(text for key, text in RUNG_OPTIONS.items() if permitted or Rung(key) not in GATED_RUNGS)
+    courting = not (situation and situation.romantic_targets == ())
+    return tuple(text for key, text in RUNG_OPTIONS.items()
+                 if (permitted or Rung(key) not in GATED_RUNGS) and (courting or Rung(key) not in ROMANTIC_RUNGS))
 
 
 def _clean_speech(alias: str, text: str) -> str:
@@ -92,7 +95,6 @@ class ConcordiaTwins:
         ))
         rung = _OPTION_TO_RUNG[choice]
 
-        # Romance is offered only toward someone the twin could be paired with; talk, toward anyone.
         candidates = names
         if rung in ROMANTIC_RUNGS and situation and situation.romantic_targets is not None:
             candidates = list(situation.romantic_targets)
