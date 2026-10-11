@@ -17,7 +17,7 @@ from .engine_types import LEAVING_RUNGS, SOCIAL_RUNGS, Action, Breach, Event, Re
 from .llm import hash_embedder
 from .world_text import (ASK_ACTION, ASK_AFTER_LINE, ASK_DATE, ASK_GATHERING, ASK_OPENER, ASK_REPLY, ASK_SPEECH,
                          ASK_TARGET, DATE_OPTIONS, INSTRUCTIONS, NEEDS_TARGET, OBSERVE_DAY, OBSERVE_NOTE,
-                         OBSERVE_INVITED, OBSERVE_REFLECTION, OBSERVE_SAID, PERSONA_SECTION, RUNG_OPTIONS, SPEAKS,
+                         OBSERVE_INVITED, OBSERVE_I_SAID, OBSERVE_REFLECTION, OBSERVE_SAID, PERSONA_SECTION, RUNG_OPTIONS, SPEAKS,
                          BASE_MEMORIES, STANDING_MEMORIES)
 
 # On a date, reflecting and going elsewhere are one choice: ending the date for today (#62). Checking the
@@ -172,9 +172,13 @@ class ConcordiaTwins:
 
     def hear(self, event: Event) -> None:
         """Whoever was spoken to hears it at once, so the conversation can go on (wall decisions stay
-        private)."""
+        private), and the speaker remembers what it said. Without its own lines a twin saw only the
+        other's side of the conversation, and copied it: the only dialogue in its prompt was theirs."""
         if event.target in self._agents and event.rung is not Rung.GO_BEYOND_WALL and event.say:
             self._agents[event.target].observe(OBSERVE_SAID.format(day=event.day, speaker=event.twin,
+                                                                   line=event.say))
+        if event.twin in self._agents and event.target and event.say:
+            self._agents[event.twin].observe(OBSERVE_I_SAID.format(day=event.day, listener=event.target,
                                                                    line=event.say))
         if event.say:
             for who in (event.twin, event.target):

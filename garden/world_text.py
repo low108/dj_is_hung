@@ -54,6 +54,7 @@ SPEAKS = {"talk", "seek_out", "propose_leaving", "go_beyond_wall"}
 OBSERVE_DAY = "Day {day} in the Garden. People around: {people}."
 OBSERVE_NOTE = "Day {day}: {note}"
 OBSERVE_SAID = 'Day {day}: {speaker} said to me: "{line}"'
+OBSERVE_I_SAID = 'Day {day}: I said to {listener}: "{line}"'
 OBSERVE_REFLECTION = "Day {day}, my private reflection: {text}"
 OBSERVE_INVITED = "Day {day}: {inviter} has asked you to leave the Garden together, and is waiting for your answer."
 ASK_ACTION = "What does {{name}} do now on day {day}?"

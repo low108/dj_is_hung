@@ -228,3 +228,25 @@ def test_an_echo_or_an_empty_line_is_asked_again():
     said = [e.say for e in result.events if e.say]
     assert said[0] == "Same line." and said[1] != "Same line."  # the second twin's echo was asked again
     assert [r.phrase for r in twins.redos][:1] == ["echo"]
+
+
+def test_a_twin_sees_both_sides_of_the_conversation():
+    # The cause of the echoing: a twin's prompt held only the other's lines, never its own.
+    class Numbered(KeywordModel):
+        def __init__(self):
+            super().__init__({}, say="A day.\nRatings: longing=5")
+            self.n, self.prompts = 0, []
+
+        def sample_text(self, prompt, **kw):
+            if "writes privately" in prompt[-800:]:
+                return self.say
+            self.n += 1
+            self.prompts.append(prompt)
+            return LINES[self.n % len(LINES)]
+
+    LINES = ["I fix bicycles by the river.", "Do you ever miss the sea?", "My sister taught me chess.",
+             "What made you come here?", "I sing badly but often."]
+    lm = Numbered()
+    run_world(WorldConfig((MARA, REN), max_days=1, seed=1), ConcordiaTwins(CountingModel(lm, letter_choices=False)))
+    third = lm.prompts[2]  # by the third line each twin has spoken once
+    assert 'said to me: "' in third and 'I said to' in third
