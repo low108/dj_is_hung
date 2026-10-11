@@ -71,17 +71,25 @@ def shared_pacer(key: tuple[str, str], requests_per_minute: int | None) -> Pacer
         return _PACERS.setdefault(key, Pacer(requests_per_minute))
 
 
+def _no_quota(error: Exception) -> bool:
+    """A 429 that waiting a minute won't fix: no quota for this model on the plan (Pro on the free
+    tier), or the day's quota is used up."""
+    text = str(error)
+    return "limit: 0" in text or "PerDay" in text
+
+
 class CountingModel(language_model.LanguageModel):
     """Counts every underlying text sample (choice retries included) and the time spent."""
 
     def __init__(self, inner: language_model.LanguageModel, *, letter_choices: bool = True,
-                 pacer: Pacer | None = None):
+                 pacer: Pacer | None = None, attempts: int = 6):
         """letter_choices: answer choices with our own counted letter prompt instead of the inner model's
         sample_choice (whose internal calls we couldn't count). Set False for offline test models.
         pacer: a shared client-side rate limit (the Gemini free tier allows 5 requests/min/model)."""
         self._inner = inner
         self._letter_choices = letter_choices
         self._pacer = pacer
+        self._attempts = attempts  # retries for overloads and rate limits (fewer when a user is waiting)
         self.stats = CallStats()
         self._lock = threading.Lock()
 
@@ -90,15 +98,23 @@ class CountingModel(language_model.LanguageModel):
             self._pacer.wait()
 
     def sample_text(self, prompt: str, **kwargs) -> str:
-        for attempt in range(6):
+        return self._counted(prompt, lambda: self._inner.sample_text(prompt, **kwargs))
+
+    def sample_json(self, prompt: str, schema: type) -> str:
+        """JSON text matching the pydantic `schema` (the inner model must support structured output)."""
+        return self._counted(prompt, lambda: self._inner.sample_json(prompt, schema))
+
+    def _counted(self, prompt: str, call) -> str:
+        last = self._attempts - 1
+        for attempt in range(self._attempts):
             self._pace()
             start = time.perf_counter()  # model time excludes pacing and backoff waits
             try:
-                out = self._inner.sample_text(prompt, **kwargs)
+                out = call()
                 break
             except Exception as e:  # overloads (503) and rate limits (429) are temporary
                 code = getattr(e, "code", None) or getattr(e, "status_code", None)
-                if code not in (429, 500, 503) or attempt == 5:
+                if code not in (429, 500, 503) or attempt == last or _no_quota(e):
                     raise
                 with self._lock:
                     self.stats.retries += 1
@@ -176,8 +192,22 @@ class GenAIModel(language_model.LanguageModel):
         response = self._client.models.generate_content(model=self._name, contents=prompt, config=config)
         return response.text or ""  # blocked or empty replies come back as "" and are retried by the caller
 
+    def sample_json(self, prompt: str, schema: type) -> str:
+        """One call constrained to the pydantic `schema` (Gemini structured output)."""
+        from google.genai import types
+
+        config = types.GenerateContentConfig(response_mime_type="application/json", response_schema=schema,
+                                             temperature=TEXT_TEMPERATURE, max_output_tokens=8192)
+        response = self._client.models.generate_content(model=self._name, contents=prompt, config=config)
+        return response.text or ""
+
     def sample_choice(self, prompt: str, responses: Sequence[str], *, seed: int | None = None):
         raise NotImplementedError("wrap in CountingModel, which answers choices by letter")
+
+
+def _answer_only(text: str) -> str:
+    """Some reasoning models put their thinking in <think> tags; keep only the answer."""
+    return (text.split("</think>", 1)[1] if "</think>" in text else text).strip()
 
 
 class OpenAICompatModel(language_model.LanguageModel):
@@ -198,11 +228,21 @@ class OpenAICompatModel(language_model.LanguageModel):
             temperature=temperature,
             stop=list(terminators)[:4] or None,
         )
-        text = response.choices[0].message.content or ""
-        # Some reasoning models put their thinking in <think> tags; keep only the answer.
-        if "</think>" in text:
-            text = text.split("</think>", 1)[1]
-        return text.strip()
+        return _answer_only(response.choices[0].message.content or "")
+
+    def sample_json(self, prompt: str, schema: type) -> str:
+        """JSON mode plus the schema in the prompt (no schema enforcement here; the caller validates)."""
+        import json
+
+        spec = json.dumps(schema.model_json_schema())
+        response = self._client.chat.completions.create(
+            model=self._name,
+            messages=[{"role": "user", "content": f"{prompt}\n\nAnswer with JSON matching this schema:\n{spec}"}],
+            response_format={"type": "json_object"},
+            max_tokens=8192,
+            temperature=TEXT_TEMPERATURE,
+        )
+        return _answer_only(response.choices[0].message.content or "")
 
     def sample_choice(self, prompt: str, responses: Sequence[str], *, seed: int | None = None):
         raise NotImplementedError("wrap in CountingModel, which answers choices by letter")
@@ -212,22 +252,22 @@ ILMU_BASE_URL = "https://api.ilmu.ai/v1"
 ILMU_MINI = "ilmu-mini-v3.3"
 
 
-def gemini(model_name: str = FLASH, requests_per_minute: int | None = None) -> CountingModel:
+def gemini(model_name: str = FLASH, requests_per_minute: int | None = None, attempts: int = 6) -> CountingModel:
     rpm = requests_per_minute or int(os.environ.get("GEMINI_RPM", "0")) or None
-    return CountingModel(GenAIModel(model_name), pacer=shared_pacer(("gemini", model_name), rpm))
+    return CountingModel(GenAIModel(model_name), pacer=shared_pacer(("gemini", model_name), rpm), attempts=attempts)
 
 
-def make_model(spec: str | None = None) -> CountingModel:
+def make_model(spec: str | None = None, attempts: int = 6) -> CountingModel:
     """Build a twin model from 'provider:model', e.g. 'gemini:gemini-3.5-flash' or 'ilmu:ilmu-mini-v3.3'.
     Defaults to the TWIN_MODEL environment variable, then Gemini Flash. A bare model name means Gemini."""
     spec = spec or os.environ.get("TWIN_MODEL") or f"gemini:{FLASH}"
     provider, _, name = spec.partition(":") if ":" in spec else ("gemini", "", spec)
     if provider == "gemini":
-        return gemini(name or FLASH)
+        return gemini(name or FLASH, attempts=attempts)
     if provider == "ilmu":
         rpm = int(os.environ.get("ILMU_RPM", "0")) or None
         inner = OpenAICompatModel(name or ILMU_MINI, ILMU_BASE_URL, os.environ["ILMU_API_KEY"])
-        return CountingModel(inner, pacer=shared_pacer(("ilmu", name or ILMU_MINI), rpm))
+        return CountingModel(inner, pacer=shared_pacer(("ilmu", name or ILMU_MINI), rpm), attempts=attempts)
     raise ValueError(f"unknown model provider {provider!r} in {spec!r}")
 
 

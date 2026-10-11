@@ -10,19 +10,20 @@ from pathlib import Path
 from collections.abc import Callable
 from typing import Literal, Protocol
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from garden import demo, highlights, replay
+from garden import twin_builder as tb
 from garden import pools as pool_lib
 from garden import speed_dating as sd
 from garden.batch import PriceLevel, Simulation, featured_spec, plan, run_simulation
 from garden.runlog import write_simulation
 from garden.scoring import score
 
-from . import onboarding
-from .auth import TokenVerifier, firebase_verifier
+from . import onboarding, twin
+from .auth import TokenVerifier, current_user, firebase_verifier
 from .store import Store, default_store
 
 log = logging.getLogger(__name__)
@@ -41,6 +42,7 @@ class StartSimulation(BaseModel):
     seeds: list[int] = [0, 1]
     max_days: int = 10
     pool_iid: int | None = None  # a real speed-dating woman (see GET /pools); None = placeholder demo pool
+    my_twin: bool = False  # the signed-in user's own twin as the woman, with the demo pool's men (D4)
     background: bool = False  # True: return at once and stream the featured run's events (the web app)
 
 
@@ -89,14 +91,18 @@ def serialize_simulation(sim: Simulation, pool: pool_lib.PoolSetup, highlight_mo
 
 def create_app(store: Store | None = None, log_runs: bool = False,
                replay_dir: Path | None = None, verify_token: TokenVerifier | None = None,
-               followup_model: Callable[[], TextModel | None] | None = None) -> FastAPI:
+               followup_model: Callable[[], TextModel | None] | None = None,
+               extraction_model: Callable[[], tb.ExtractionModel | None] | None = None) -> FastAPI:
     """`replay_dir`: where finished runs are saved for replay (None: not saved, and no replays listed).
     `verify_token` turns a sign-in token into a user id (default: Firebase Auth). `followup_model()` gives
-    the model that asks onboarding follow-ups (default: Gemini Flash when a key is set; None: templates)."""
+    the model that asks onboarding follow-ups (default: Gemini Flash when a key is set; None: templates).
+    `extraction_model()` gives (name, model) for building twins (default: Gemini Pro; None: unavailable)."""
     app = FastAPI(title="dj_is_hung API")
     app.state.verify_token = verify_token or (lambda token: firebase_verifier()(token))
     app.state.followup_model = followup_model or demo.make_followup_model
+    app.state.extraction_model = extraction_model or demo.make_extraction_model
     app.include_router(onboarding.router)
+    app.include_router(twin.router)
     app.state.log_runs = log_runs
     app.state.replay_dir = replay_dir
     app.state.store = store or default_store()
@@ -126,14 +132,17 @@ def create_app(store: Store | None = None, log_runs: bool = False,
         return pool_lib.eligible_women(dates())
 
     @app.post("/simulations", status_code=201)
-    def start_simulation(req: StartSimulation) -> dict:
+    def start_simulation(req: StartSimulation, request: Request) -> dict:
         sim_id = uuid.uuid4().hex[:12]
         specs = plan(req.models, req.prices, req.seeds)
-        try:
-            pool = pool_lib.resolve(req.pool_iid, dates)
-        except KeyError as e:
-            raise HTTPException(404, str(e)) from e
-        twins, personas, woman, men, matched = pool.twins, pool.personas, pool.woman, pool.men, pool.matched
+        if req.my_twin:
+            pool = demo.with_her_twin(*tb.garden_inputs(twin.reviewed_twin(request, current_user(request))))
+        else:
+            try:
+                pool = pool_lib.resolve(req.pool_iid, dates)
+            except KeyError as e:
+                raise HTTPException(404, str(e)) from e
+        twins, personas, woman, men = pool.twins, pool.personas, pool.woman, pool.men
         record = {
             "id": sim_id,
             "status": "running",
@@ -191,10 +200,10 @@ def create_app(store: Store | None = None, log_runs: bool = False,
         def finish() -> dict:
             # Runs fan out on local threads for now; A3 moves the same RunSpecs to Cloud Run Job tasks.
             sim = run_simulation(specs, twins,
-                                 lambda spec: demo.make_twin_model(spec, personas, fake_scenario=req.scenario),
+                                 lambda spec: demo.make_twin_model(spec, personas, fake_scenario=req.scenario, woman=woman),
                                  observe=lambda spec: recorders[spec.run_id].observer,
-                                 on_finished=save_replay, max_days=req.max_days)
-            done = record | {"status": "done", "pool_iid": req.pool_iid,
+                                 on_finished=save_replay, max_days=req.max_days, thresholds=pool.thresholds)
+            done = record | {"status": "done", "pool_iid": req.pool_iid, "my_twin": req.my_twin,
                              **serialize_simulation(sim, pool, highlight_model())}
             if app.state.log_runs:
                 done["log_dir"] = str(write_simulation(sim_id, sim, woman, men))

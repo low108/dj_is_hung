@@ -118,6 +118,7 @@ class PoolSetup:
     woman: str
     men: list[str]
     matched: frozenset[str] | None  # the answer key; None for the demo pool
+    thresholds: tuple[tuple[str, float], ...] = ()  # per-twin verdict-gate thresholds (a user's own twin)
 
 
 def resolve(pool_iid: int | None, dates: Callable[[], pd.DataFrame] = sd.load) -> PoolSetup:

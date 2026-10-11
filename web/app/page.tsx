@@ -1,16 +1,17 @@
 "use client";
 
+import { onAuthStateChanged, type User } from "firebase/auth";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { Progress } from "./garden/GardenMap";
 import Timeline, { isWallCrossing } from "./garden/Timeline";
 import TwinPanel, { type TwinState } from "./garden/TwinPanel";
+import { API_URL, ApiError, authedFetch, firebaseAuth } from "./firebase";
 
 // Phaser touches `window`, so the map only loads in the browser.
 const GardenMap = dynamic(() => import("./garden/GardenMap"), { ssr: false });
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
 
 type Scenario = "breakout" | "unrequited" | "timeout" | "excluded";
 
@@ -62,6 +63,7 @@ type CandidateHighlights = {
 };
 
 const TOAST_MS = 4000;
+const MY_TWIN = "me"; // the Pool picker's value for the signed-in user's own twin
 const SPEEDS = [1, 2, 4];
 const START: Progress = { day: 0, seq: -1, caughtUp: false };
 
@@ -148,6 +150,27 @@ export default function Home() {
   const [poolIid, setPoolIid] = useState<string>("");
   const [model, setModel] = useState<string>("fake");
   const [pools, setPools] = useState<{ iid: number; matches: number; dates: number }[]>([]);
+
+  // A signed-in user with a twin can put her twin in the Garden ("My twin" pool).
+  const [user, setUser] = useState<User | null>(null);
+  const [myTwin, setMyTwin] = useState<{ alias: string; reviewed: boolean } | null>(null);
+  useEffect(() => onAuthStateChanged(firebaseAuth(), setUser), []);
+  useEffect(() => {
+    setMyTwin(null);
+    if (!user) return;
+    let stale = false;
+    authedFetch<{ alias: string; reviewed: boolean }>(user, "/me/twin")
+      .then((t) => !stale && setMyTwin(t))
+      .catch((e) => !(e instanceof ApiError && e.status === 404) && console.warn("couldn't load your twin", e));
+    return () => {
+      stale = true;
+    };
+  }, [user]);
+
+  // Signed out, or no reviewed twin: "My twin" can't stay selected.
+  useEffect(() => {
+    if (!myTwin?.reviewed) setPoolIid((p) => (p === MY_TWIN ? "" : p));
+  }, [myTwin]);
 
   useEffect(() => {
     fetch(`${API_URL}/pools`)
@@ -311,13 +334,16 @@ export default function Home() {
     setBusy(true);
     resetView();
     try {
+      const mine = poolIid === MY_TWIN;
+      const auth: Record<string, string> = mine && user ? { Authorization: `Bearer ${await user.getIdToken()}` } : {};
       const res = await fetch(`${API_URL}/simulations`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...auth },
         body: JSON.stringify({
           scenario,
           background: true,
-          pool_iid: poolIid ? Number(poolIid) : null,
+          my_twin: mine,
+          pool_iid: poolIid && !mine ? Number(poolIid) : null,
           ...(model === "fake" ? {} : { models: [model] }),
         }),
       });
@@ -369,6 +395,11 @@ export default function Home() {
           Pool{" "}
           <select value={poolIid} onChange={(e) => setPoolIid(e.target.value)} aria-label="Pool">
             <option value="">Demo pool (Mara)</option>
+            {myTwin && (
+              <option value={MY_TWIN} disabled={!myTwin.reviewed}>
+                My twin ({myTwin.alias}) with the demo men{myTwin.reviewed ? "" : " (review it first)"}
+              </option>
+            )}
             {pools.map((p) => (
               <option key={p.iid} value={p.iid}>
                 Participant {p.iid}: {p.matches} matches of {p.dates} dates
