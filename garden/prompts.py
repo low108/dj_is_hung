@@ -21,6 +21,7 @@ def prompt_texts() -> dict:
     return {
         "base_memories": list(world_text.BASE_MEMORIES),
         "standing_memories": list(world_text.STANDING_MEMORIES),
+        "instructions": [world_text.INSTRUCTIONS, world_text.PERSONA_SECTION],
         "rung_options": dict(world_text.RUNG_OPTIONS),
         "templates": {k: getattr(world_text, k) for k in (
             "OBSERVE_DAY", "OBSERVE_NOTE", "OBSERVE_SAID", "OBSERVE_REFLECTION", "OBSERVE_INVITED", "ASK_ACTION", "ASK_TARGET", "ASK_SPEECH",

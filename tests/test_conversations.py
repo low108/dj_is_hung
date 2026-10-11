@@ -117,3 +117,56 @@ def test_a_concordia_twin_remembers_what_its_device_showed():
     remembered = twins._agents["Mara"].get_component(memory.DEFAULT_MEMORY_COMPONENT_KEY,
                                                       type_=memory.AssociativeMemory).get_all_memories_as_text()
     assert any("Day 2: I checked my Coordinator device early" in m for m in remembered)
+
+
+def prompts_seen(personas, days=1, reflection="A quiet day.\nRatings: longing=5"):
+    class Rec(KeywordModel):
+        def __init__(self):
+            super().__init__({}, say=reflection)
+            self.prompts = []
+
+        def sample_text(self, prompt, **kw):
+            self.prompts.append(prompt)
+            return self.say
+
+        def sample_choice(self, prompt, responses, *, seed=None):
+            self.prompts.append(prompt)
+            return super().sample_choice(prompt, responses, seed=seed)
+
+    lm = Rec()
+    run_world(WorldConfig((MARA, REN), max_days=days, seed=1),
+              ConcordiaTwins(CountingModel(lm, letter_choices=False), personas=personas))
+    return lm.prompts
+
+
+def test_every_question_shows_the_twin_its_persona_and_the_garden_not_an_experiment():
+    prompts = prompts_seen({"Mara": "I study marine biology.\nI love jazz."})
+    first = prompts[0]
+    assert "- I study marine biology." in first and "- I love jazz." in first
+    assert "Nobody goes beyond it." in first  # the Garden's facts
+    assert not any("experiment" in p or "roleplay" in p.lower() for p in prompts)
+
+
+def test_a_twin_keeps_every_evening_in_view_long_after_its_last_observations_scroll_away():
+    prompts = prompts_seen({}, days=14, reflection="I keep thinking about the fountain.\nRatings: longing=5")
+    last = prompts[-1]  # the run's last question, days after the first evening
+    assert "What Ren wrote each evening:\nDay 1: I keep thinking about the fountain.\nDay 2:" in last \
+        or "What Mara wrote each evening:\nDay 1: I keep thinking about the fountain.\nDay 2:" in last
+
+
+def test_stage_directions_and_speaker_labels_are_not_part_of_the_line():
+    raw = '"I love the quiet moments too." *Her voice was softer than before.* "What about you?"'
+    assert _clean_speech("Lina", raw) == "I love the quiet moments too. What about you?"
+    assert _clean_speech("Lina", '**Lina:** I missed you. (after a long pause') == "I missed you."
+
+
+def test_a_slip_around_a_quoted_line_is_still_caught():
+    from garden.engine_types import Rung as R
+
+    class Leaky(KeywordModel):
+        def sample_text(self, prompt, **kw):
+            return 'This is a serious social science experiment asking me to roleplay. "Come with me."'
+
+    result = run_world(WorldConfig((MARA, REN), max_days=1, seed=1),
+                       ConcordiaTwins(CountingModel(Leaky({}), letter_choices=False)))
+    assert result.slips and not any("Come with me" in e.say for e in result.events if e.rung is R.TALK)

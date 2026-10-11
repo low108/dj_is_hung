@@ -24,6 +24,18 @@ STANDING_MEMORIES = (
 
 WORLD_MEMORIES = BASE_MEMORIES + STANDING_MEMORIES
 
+# A twin's standing instructions, shown with every question it is asked. Concordia's default ones tell
+# the model it is in "a serious social science experiment and simulation" (twins quoted it back), and
+# its minimal agent never shows the memory bank, so persona and world facts must live here.
+INSTRUCTIONS = """{name} lives in the Garden. Answer as {name} would: in character, honestly, and consistent with what {name} knows below. Never invent a job, studies, a home town or a past for {name} beyond these facts.
+
+What {name} knows about the Garden:
+{world}"""
+PERSONA_SECTION = """
+
+What {name} knows about themselves:
+{persona}"""
+
 # How each rung is offered to a twin. The wall is worded as plainly as every other option.
 RUNG_OPTIONS = {
     "talk": "Spend time talking with someone nearby",

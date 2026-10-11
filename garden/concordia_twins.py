@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from concordia.associative_memory import basic_associative_memory
+from concordia.components.agent import constant
 from concordia.language_model import language_model
 from concordia.prefabs.entity import minimal
 from concordia.typing import entity as entity_lib
@@ -14,13 +15,24 @@ from . import immersion
 from .engine_types import LEAVING_RUNGS, SOCIAL_RUNGS, Action, Breach, Event, Reflection, Rung, Situation, Twin
 from .llm import hash_embedder
 from .world_text import (ASK_ACTION, ASK_AFTER_LINE, ASK_DATE, ASK_GATHERING, ASK_OPENER, ASK_REPLY, ASK_SPEECH,
-                         ASK_TARGET, DATE_OPTIONS, NEEDS_TARGET, OBSERVE_DAY, OBSERVE_NOTE, OBSERVE_INVITED,
-                         OBSERVE_REFLECTION, OBSERVE_SAID, RUNG_OPTIONS, SPEAKS, BASE_MEMORIES, STANDING_MEMORIES)
+                         ASK_TARGET, DATE_OPTIONS, INSTRUCTIONS, NEEDS_TARGET, OBSERVE_DAY, OBSERVE_NOTE,
+                         OBSERVE_INVITED, OBSERVE_REFLECTION, OBSERVE_SAID, PERSONA_SECTION, RUNG_OPTIONS, SPEAKS,
+                         BASE_MEMORIES, STANDING_MEMORIES)
 
 # On a date, reflecting and going elsewhere are one choice: ending the date for today (#62). Checking the
 # device stays its own choice: a rule-break (it costs Standing) and the Coordinator re-rolls the date's length.
 _DATE_SOLO = (Rung.GO_TO,)
 RESAMPLES = 2  # extra attempts for a line or reflection that breaks immersion
+DIARY_LABEL = "\nWhat {name} wrote each evening"
+
+
+class Diary(constant.Constant):
+    """Every evening reflection, kept in view for the whole run. The minimal agent shows only its last
+    100 observations (about ten days), so without this a twin deciding after the wall opens (day 26+)
+    had forgotten its first dates."""
+
+    def add(self, line: str) -> None:
+        self._state = f"{self._state}\n{line}".strip()
 T = TypeVar("T")
 
 
@@ -46,6 +58,14 @@ def options_for(situation: Situation | None) -> dict[str, Rung]:
         if offered(rung):
             out[DATE_OPTIONS[key].format(partner=partner) if partner and key in DATE_OPTIONS else text] = rung
     return out
+
+
+def instructions(name: str, world: tuple[str, ...], persona: list[str]) -> str:
+    """What a twin is shown with every question: who it is and the Garden it lives in (#62 follow-up:
+    Concordia's minimal agent never shows its memory bank, so until this no twin saw its persona)."""
+    bullets = lambda lines: "\n".join(f"- {line}" for line in lines)  # noqa: E731
+    text = INSTRUCTIONS.format(name=name, world=bullets(world))
+    return text + (PERSONA_SECTION.format(name=name, persona=bullets(persona)) if persona else "")
 
 
 def offered_options(situation: Situation | None) -> tuple[str, ...]:
@@ -75,10 +95,14 @@ def ask_speech(rung: Rung, target: str, situation: Situation | None) -> str:
     return (ASK_REPLY if replying else ASK_OPENER).format(target=target)
 
 
-# Narration between two quoted parts of one line: '"Hi," she says, "how are you?"'.
-_NARRATION = re.compile(r'["”]\s*[^"“”]{0,60}?\b(?:says?|said|asks?|asked|adds?|added|whispers?|whispered|'
+# Narration between two quoted parts of one line: '"Hi," she says, "how are you?"' (or nothing at all
+# between them, once a stage direction is gone).
+_NARRATION = re.compile(r'["”]\s*(?:[^"“”]{0,80}?\b(?:says?|said|asks?|asked|adds?|added|whispers?|whispered|'
                         r'repl(?:y|ies|ied)|continues?|continued|murmurs?|murmured|smiles?|smiled|laughs?|laughed|'
-                        r'pauses?|paused)\b[^"“”]{0,60}?["“]')
+                        r'pauses?|paused|echoe?s|echoed)\b[^"“”]{0,80}?)?["“]')
+# Stage directions and speaker labels: '*She pauses.*', '**Lina:**', '(after a long pause)'.
+_STAGE = (re.compile(r"\*\*[^*\n]{1,40}:\*\*"), re.compile(r"\*+[^*\n]*\*+"), re.compile(r"_\*+|\*+_"),
+          re.compile(r"\([^)\n]*\)"), re.compile(r"\s*\([^)\n]*$"))
 
 
 def _clean_speech(alias: str, text: str) -> str:
@@ -87,6 +111,8 @@ def _clean_speech(alias: str, text: str) -> str:
     the first opening quote to the last closing one, so a quote inside the line stays whole, and
     narration between two quoted parts is dropped. Model framing ("I'll respond as …") goes first."""
     text = immersion.strip_framing(text)
+    for stage in _STAGE:
+        text = stage.sub(" ", text).strip()
     for quote_open, quote_close in (('"', '"'), ("“", "”")):
         start = text.find(quote_open)
         if start != -1:
@@ -111,6 +137,7 @@ class ConcordiaTwins:
         self._model = model
         self._personas = personas or {}
         self._agents: dict[str, object] = {}
+        self._diaries: dict[str, Diary] = {}
         self._standing_in_play: dict[str, bool] = {}
         self._briefed: set[tuple[str, int]] = set()     # (twin, day): told about its day already
         self._heard_invites: set[tuple[str, str, int]] = set()
@@ -135,13 +162,16 @@ class ConcordiaTwins:
 
     def _agent(self, twin: Twin, standing_in_play: bool = True):
         if twin.alias not in self._agents:
+            world = BASE_MEMORIES + (STANDING_MEMORIES if standing_in_play else ())
+            persona = [line.strip() for line in self._personas.get(twin.alias, "").splitlines() if line.strip()]
             bank = basic_associative_memory.AssociativeMemoryBank(sentence_embedder=hash_embedder)
-            for memory in BASE_MEMORIES + (STANDING_MEMORIES if standing_in_play else ()):
+            for memory in (*world, *persona):
                 bank.add(memory)
-            for line in self._personas.get(twin.alias, "").splitlines():
-                if line.strip():
-                    bank.add(line.strip())
-            self._agents[twin.alias] = minimal.Entity(params={"name": twin.alias}).build(self._model, bank)
+            self._diaries[twin.alias] = Diary("", pre_act_label=DIARY_LABEL.format(name=twin.alias))
+            params = {"name": twin.alias, "custom_instructions": instructions(twin.alias, world, persona),
+                      "extra_components": {"Diary": self._diaries[twin.alias]},
+                      "extra_components_index": {"Diary": 1}}  # right after who it is, before today
+            self._agents[twin.alias] = minimal.Entity(params=params).build(self._model, bank)
             self._standing_in_play[twin.alias] = standing_in_play
         return self._agents[twin.alias]
 
@@ -180,8 +210,10 @@ class ConcordiaTwins:
         if rung.value in SPEAKS and target:
             spec = entity_lib.ActionSpec(call_to_action=ask_speech(rung, target, situation),
                                          output_type=entity_lib.OutputType.FREE)
-            say = self._resample_while_breaking(twin.alias, day, lambda: _clean_speech(twin.alias, agent.act(spec)),
-                                                lambda line: line)
+            # The slip check reads the model's whole reply: a quote pulled out of '...it's a serious social
+            # science experiment...' must not hide what the model said around it.
+            raw = self._resample_while_breaking(twin.alias, day, lambda: agent.act(spec), lambda reply: reply)
+            say = raw if immersion.breaking_phrase(raw) else _clean_speech(twin.alias, raw)  # engine drops a slip
         return Action(rung, target, say)
 
     def _resample_while_breaking(self, alias: str, day: int, sample: Callable[[], T],
@@ -213,6 +245,7 @@ class ConcordiaTwins:
                                                           lambda r: r[0])
             if text and not immersion.breaking_phrase(text):  # one that slipped is never remembered (#64)
                 agent.observe(OBSERVE_REFLECTION.format(day=day, text=text))
+                self._diaries[alias].add(f"Day {day}: {text}")
             reflections.append(Reflection(day, alias, text, ratings))
         return reflections
 

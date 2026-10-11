@@ -28,7 +28,7 @@ def test_a_one_off_break_is_resampled_and_the_run_survives():
     result = run([BROKEN])
     assert result.outcome is OutcomeKind.TIMEOUT and result.scorable
     assert result.immersion_resamples == 1
-    assert result.immersion_breaks[0].text == BROKEN and not result.slips
+    assert BROKEN in result.immersion_breaks[0].text and not result.slips  # the whole reply is checked
 
 
 def test_text_still_out_of_character_after_resampling_is_dropped_and_the_run_goes_on():
