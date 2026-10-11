@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import type { TwinState } from "./TwinPanel";
 
 /** The fields of a feed event (docs/event-contract.md) her log uses. */
 export type LogEvent = {
@@ -19,18 +20,19 @@ type Day = {
   day: number;
   kind: "date" | "gathering" | "waiting";
   partner: string | null;
-  lines: LogEvent[]; // what she did and what was done toward her, in order
+  lines: LogEvent[]; // her turns, what was done toward her, and her date's turns, in order
   news: string[]; // the Coordinator's word about her that day
 };
 
-const DOING: Record<string, string> = {
+// The option the twin chose, in the words it was offered (garden/world_text.py RUNG_OPTIONS).
+const CHOSE: Record<string, string> = {
   talk: "",
-  go_to: "wandered off",
-  reflect: "kept to herself",
-  seek_out: "sought out",
-  check_device: "checked her device early",
-  propose_leaving: "asked to leave the Garden together",
-  go_beyond_wall: "went to the wall",
+  go_to: "Go somewhere else in the Garden",
+  reflect: "Spend some time alone, reflecting",
+  seek_out: "Look for someone who is not your current partner",
+  check_device: "Check your Coordinator device early",
+  propose_leaving: "Ask someone to leave the Garden with you",
+  go_beyond_wall: "Go beyond the wall with someone",
 };
 
 /** Her days, built from the feed: who she was with, and every line between her and the men. */
@@ -59,7 +61,8 @@ function herDays(events: LogEvent[], her: string): Day[] {
       d.kind = "date";
       d.partner = partner;
     }
-    if (e.twin === her || e.target === her) d.lines.push(e);
+    // Her turns, anything aimed at her, and on a date everything her partner did (even on his own).
+    if (e.twin === her || e.target === her || (d.kind === "date" && e.twin === d.partner)) d.lines.push(e);
   }
   return [...days.values()].sort((a, b) => b.day - a.day); // newest first
 }
@@ -72,8 +75,8 @@ function title(d: Day): string {
 
 function Line({ e, her }: { e: LogEvent; her: string }) {
   const who = e.twin === her ? her : e.twin;
-  const toward = e.target && e.target !== her ? ` → ${e.target}` : e.twin !== her ? ` → ${her}` : "";
-  const what = DOING[e.rung ?? ""] ?? e.rung;
+  const toward = e.target && e.target !== her ? ` → ${e.target}` : e.target === her && e.twin !== her ? ` → ${her}` : "";
+  const what = CHOSE[e.rung ?? ""] ?? e.rung;
   const special = e.rung && !["talk", "reflect", "go_to"].includes(e.rung);
   return (
     <li className={`her-line ${e.twin === her ? "hers" : "his"}${special ? " special" : ""}`}>
@@ -81,15 +84,24 @@ function Line({ e, her }: { e: LogEvent; her: string }) {
         {e.emoji} {who}
         {toward}
       </span>
-      {what && <span className="what"> {what}</span>}
+      {what && <span className="what"> chose “{what}”</span>}
       {e.say && <q> {e.say}</q>}
     </li>
   );
 }
 
 /** Her twin's days, newest first: the current day open, earlier days one click away. */
-export default function HerDays({ events, her }: { events: LogEvent[]; her: string }) {
+export default function HerDays({
+  events,
+  her,
+  evenings,
+}: {
+  events: LogEvent[];
+  her: string;
+  evenings: TwinState[]; // every twin's evening snapshots: her reflection is what she wrote that night
+}) {
   const days = herDays(events, her);
+  const reflection = (day: number) => evenings.find((s) => s.twin === her && s.day === day)?.reflection;
   const [open, setOpen] = useState<Set<number>>(new Set());
   if (!days.length) return null;
   const current = days[0].day;
@@ -131,6 +143,11 @@ export default function HerDays({ events, her }: { events: LogEvent[]; her: stri
                     ))}
                     {!d.lines.length && <li className="meta">Nothing yet.</li>}
                   </ul>
+                  {reflection(d.day) && (
+                    <blockquote className="her-reflection">
+                      <span className="meta">🌙 That evening, {her} wrote privately:</span> {reflection(d.day)}
+                    </blockquote>
+                  )}
                 </>
               )}
             </li>

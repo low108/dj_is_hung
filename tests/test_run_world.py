@@ -98,10 +98,10 @@ def test_the_run_ends_when_every_man_has_had_his_dates():
 
 
 def test_acting_toward_someone_out_of_reach_is_keeping_to_oneself():
-    # On a date, Mara can't go to the wall for anyone but her partner.
-    result = run_world(world(*POOL), ScriptedModel({("Mara", 1): Action(WALL, "Nobody")}))
-    first = next(e for e in result.events if e.day == 1 and e.twin == "Mara")
-    assert first.rung is Rung.REFLECT and result.unrequited == []
+    # On a date, Mara can't go to the wall for anyone but her partner (after they've both spoken).
+    result = run_world(world(*POOL), ScriptedModel({("Mara", 1, 2): Action(WALL, "Nobody")}))
+    second = [e for e in result.events if e.day == 1 and e.twin == "Mara"][1]
+    assert second.rung is Rung.REFLECT and result.unrequited == []
 
 
 def test_a_twin_can_follow_someone_to_the_wall_after_they_have_left_for_the_day():
@@ -111,8 +111,14 @@ def test_a_twin_can_follow_someone_to_the_wall_after_they_have_left_for_the_day(
 
 
 def test_nobody_can_talk_to_someone_who_has_left_for_the_day():
-    script = {("Mara", 1, 1): Action(Rung.REFLECT),
-              ("Ren", 1, 1): Action(TALK, "Mara", "Hi."), ("Ren", 1, 2): Action(TALK, "Mara", "Wait!")}
+    script = {("Mara", 1, 2): Action(Rung.REFLECT), **{("Ren", 1, n): Action(TALK, "Mara", "Wait!") for n in (1, 2, 3)}}
     day_one = [e for e in run_world(world(MARA, REN), ScriptedModel(script)).events if e.day == 1]
-    left = next(i for i, e in enumerate(day_one) if e.twin == "Mara")  # she keeps to herself at once
+    left = next(i for i, e in enumerate(day_one) if e.twin == "Mara" and e.rung is Rung.REFLECT)
     assert all(e.rung is not TALK for e in day_one[left + 1:] if e.twin == "Ren")  # his words go nowhere
+
+
+def test_a_date_opens_with_both_speaking_before_either_can_withdraw():
+    script = {("Mara", 1, 1): Action(Rung.REFLECT), ("Ren", 1, 1): Action(Rung.REFLECT)}
+    day_one = [e for e in run_world(world(MARA, REN), ScriptedModel(script)).events if e.day == 1]
+    firsts = {e.twin: e for e in reversed(day_one)}  # each twin's first turn
+    assert all(e.rung is TALK and e.target != e.twin for e in firsts.values())  # turned into talking

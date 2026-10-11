@@ -30,10 +30,11 @@ def offered_options(situation: Situation | None) -> tuple[str, ...]:
     permitted = bool(situation and situation.may_break_rules)
     company = not (situation and situation.targets == ())
     on_date = bool(situation and situation.phase == "date")
+    must_talk = bool(situation and situation.must_talk)  # a date opens with both speaking
 
     def offered(rung: Rung) -> bool:
         return ((permitted or rung not in GATED_RUNGS) and (company or rung not in SOCIAL_RUNGS)
-                and not (on_date and rung is Rung.SEEK_OUT))
+                and not (on_date and rung is Rung.SEEK_OUT) and not (must_talk and rung not in SOCIAL_RUNGS))
 
     return tuple(text for key, text in RUNG_OPTIONS.items() if offered(Rung(key)))
 

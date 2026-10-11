@@ -36,7 +36,7 @@ def test_feed_lines_read_like_sentences():
 
 
 def test_an_announcement_caused_by_an_action_comes_after_it():
-    feed = collect({("Mara", 2): Action(Rung.CHECK_DEVICE)})
+    feed = collect({("Mara", 2, 2): Action(Rung.CHECK_DEVICE)})  # after the date's opening exchange
     check = next(i for i, e in enumerate(feed) if e["rung"] == "check_device")
     changed = next(i for i, e in enumerate(feed) if e["announcement_kind"] == "changed")
     assert changed > check

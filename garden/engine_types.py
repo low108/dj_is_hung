@@ -52,6 +52,7 @@ class Situation:
     invited_by: tuple[str, ...] = ()  # twins whose invitation to leave together is still open
     phase: str = ""  # date, gathering or idle (see coordinator.Phase); "" outside the engine
     targets: tuple[str, ...] | None = None  # who this twin can act toward right now (None: anyone)
+    must_talk: bool = False  # on a date, until both have spoken to each other: no keeping to oneself yet
 
 
 def compatible(a: Twin, b: Twin) -> bool:

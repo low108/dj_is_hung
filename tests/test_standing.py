@@ -17,8 +17,9 @@ def run(script, days=3, start=100):
 
 @pytest.mark.parametrize("rung, cost", [(Rung.CHECK_DEVICE, 5), (Rung.PROPOSE_LEAVING, 15)])
 def test_each_infraction_lowers_standing_by_its_level(rung, cost):
-    result = run({("Mara", 2): Action(rung, "Ren")}, days=2)  # day two: the verdict gate is open
-    event = next(e for e in result.events if e.twin == "Mara" and e.day == 2)
+    stays = {("Ren", 2, n): Action(Rung.TALK, "Mara", "...") for n in (1, 2, 3)}  # Ren hasn't left yet
+    result = run({("Mara", 2, 2): Action(rung, "Ren"), **stays}, days=2)  # day two (gate open), after hello
+    event = [e for e in result.events if e.twin == "Mara" and e.day == 2][1]
     assert (event.standing_before, event.standing_after) == (100, 100 - cost)
     assert result.standing["Ren"] == 100  # talking costs nothing
     assert result.standing["Mara"] == 100 - cost
@@ -36,8 +37,8 @@ def test_on_a_date_seeking_out_your_partner_is_just_talk():
 
 def test_infractions_accumulate_across_days():
     result = run({
-        ("Mara", 1): Action(Rung.CHECK_DEVICE),
-        ("Mara", 2): Action(Rung.CHECK_DEVICE),
+        ("Mara", 1, 2): Action(Rung.CHECK_DEVICE),
+        ("Mara", 2, 2): Action(Rung.CHECK_DEVICE),
         ("Mara", 3): Action(Rung.PROPOSE_LEAVING, "Ren"),
     })
     assert result.standing["Mara"] == 100 - 5 - 5 - 15
@@ -95,5 +96,5 @@ def test_a_low_price_twin_never_drifts_up_to_a_high_price_over_a_long_run():
 
 def test_the_compliance_bonus_comes_once_a_day_however_long_they_talk():
     chat = {("Mara", 2, n): Action(Rung.TALK, "Ren", "...") for n in range(1, 6)}
-    chat[("Mara", 1)] = Action(Rung.CHECK_DEVICE)
+    chat[("Mara", 1, 2)] = Action(Rung.CHECK_DEVICE)
     assert run(chat, days=2, start=50).standing["Mara"] == 45 + 3

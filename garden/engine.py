@@ -178,6 +178,7 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
         todays: list[tuple[str, Action]] = []
         placed: dict[str, str] = {}
         answering: str | None = None
+        spoken: set[str] = set()  # on a date: who has said something to their partner today
         hear = getattr(model, "hear", None)
         while True:
             ready = [t for t in active if t.alias not in done and turns[t.alias] < config.max_turns]
@@ -188,6 +189,9 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
             phase = coordinator.phase_of(twin.alias)
             targets = targets_for(twin, phase)
             gate = gates[twin.alias]
+            partner = coordinator.partner_of(twin.alias) if phase is Phase.DATE else None
+            # A date day opens with a conversation: neither can withdraw until both have spoken.
+            must_talk = bool(partner) and not {twin.alias, partner} <= spoken
             situation = Situation(
                 standing=standing_rules.describe(standing[twin.alias]) if config.standing_enabled else "",
                 longing=longing.describe(twin.alias) if config.longing_enabled else "",
@@ -196,7 +200,7 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
                 standing_in_play=config.standing_enabled,
                 # only told when they could answer: a closed gate can't accept an invitation
                 invited_by=invitations.inviters_of(twin.alias, day) if gate.permitted else (),
-                phase=phase.value, targets=targets)
+                phase=phase.value, targets=targets, must_talk=must_talk)
             action = model.choose_action(twin, day, tuple(by_alias[a] for a in targets), situation)
             if action.rung in verdict_rules.GATED_RUNGS and not gate.permitted:
                 action = Action(Rung.REFLECT)  # the gate holds for every model, not just well-behaved ones
@@ -207,6 +211,10 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
                 action = Action(Rung.REFLECT)
             elif action.rung is Rung.SEEK_OUT and phase is Phase.DATE:
                 action = Action(Rung.TALK, action.target, action.say)  # on a date they're already together
+            if must_talk and action.rung not in SOCIAL_RUNGS:
+                action = Action(Rung.TALK, partner, action.say)  # not yet: they haven't both spoken
+            if partner and action.rung in SOCIAL_RUNGS and action.target == partner:
+                spoken.add(twin.alias)
             todays.append((twin.alias, action))
             coordinator.on_action(day, twin.alias, action)
             invitations.on_action(twin.alias, action, day)

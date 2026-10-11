@@ -589,7 +589,14 @@ export default function Home() {
         </section>
       )}
 
-      {her && playedEvents.length > 0 && <HerDays events={playedEvents} her={her} />}
+      {her && playedEvents.length > 0 && (
+        <HerDays
+          events={playedEvents}
+          her={her}
+          // evenings the map has reached: a reflection appears once its day has played
+          evenings={twinStates.filter((t) => t.day < progress.day || (progress.caughtUp && !busy))}
+        />
+      )}
 
       {playedEvents.length > 0 && (
         <details className="result feed" data-testid="feed" open={!her}>
