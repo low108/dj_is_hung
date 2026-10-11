@@ -23,6 +23,8 @@ class Rung(str, Enum):
 # Actions aimed at someone. Who that can be depends on the day (B9): on a date, the partner; at a
 # gathering, anyone the twin could be paired with (opposite sex).
 SOCIAL_RUNGS = frozenset({Rung.TALK, Rung.SEEK_OUT, Rung.PROPOSE_LEAVING, Rung.GO_BEYOND_WALL})
+# Leaving the Garden: locked until the wall opens (#63), then each twin's free choice.
+LEAVING_RUNGS = frozenset({Rung.PROPOSE_LEAVING, Rung.GO_BEYOND_WALL})
 # Actions that end a twin's day: doing something on its own (or heading for the wall).
 DAY_ENDERS = frozenset({Rung.REFLECT, Rung.CHECK_DEVICE, Rung.GO_TO, Rung.GO_BEYOND_WALL})
 
@@ -47,7 +49,7 @@ class Situation:
     standing: str = ""
     longing: str = ""
     schedule: str = ""  # the Coordinator's word: current assignment, tonight's gathering, rumours
-    may_break_rules: bool = False  # the verdict gate: whether proposing to leave / the wall are offered
+    wall_open: bool = False  # whether proposing to leave and the wall are offered (see engine: the wall lock)
     standing_in_play: bool = True  # False in the ablation's floor: twins aren't told Standing exists
     invited_by: tuple[str, ...] = ()  # twins whose invitation to leave together is still open
     phase: str = ""  # date, gathering or idle (see coordinator.Phase); "" outside the engine
@@ -105,17 +107,6 @@ class Announcement:
     day: int
     text: str
     kind: str = ""
-
-
-@dataclass(frozen=True)
-class Verdict:
-    """One day's gate decision for one twin, logged for audit."""
-
-    day: int
-    twin: str
-    score: float | None
-    threshold: float
-    permitted: bool
 
 
 @dataclass(frozen=True)

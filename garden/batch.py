@@ -67,7 +67,7 @@ class Observer:
 
 def run_one(spec: RunSpec, twins: tuple[Twin, ...], make_model: Callable[[RunSpec], Model],
             observer: Observer | None = None, **config) -> RunRecord:
-    """One run; extra keyword arguments go to WorldConfig (e.g. max_days, thresholds)."""
+    """One run; extra keyword arguments go to WorldConfig (e.g. max_days)."""
     start = time.perf_counter()
     try:
         world = WorldConfig(twins, seed=spec.seed, **config)

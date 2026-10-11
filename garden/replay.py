@@ -29,6 +29,7 @@ def outcome_fields(res: RunResult) -> dict:
         "outcome": res.outcome.value,
         "day": res.day,
         "pair": list(res.pair) if res.pair else None,
+        "wall_opened": res.wall_opened,
         "unrequited": [{"day": a.day, "twin": a.twin, "target": a.target} for a in res.unrequited],
         "breach": ({"day": res.breach.day, "twin": res.breach.twin, "phrase": res.breach.phrase,
                     "text": res.breach.text} if res.breach else None),

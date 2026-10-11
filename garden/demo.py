@@ -62,13 +62,13 @@ def make_followup_model():
     return make_model(spec or f"gemini:{FLASH}", attempts=2)  # a user is waiting on the page
 
 
-def with_her_twin(alias: str, persona: str, threshold: float):
+def with_her_twin(alias: str, persona: str):
     """The demo pool's men with a user's own twin as the woman (D4); see twin_builder.garden_inputs."""
     from .pools import PoolSetup
 
     men = tuple(t for t in POOL if t.alias != WOMAN)
     personas = {t.alias: PERSONAS[t.alias] for t in men} | {alias: persona}
-    return PoolSetup((Twin(alias, "f"), *men), personas, alias, MEN, None, ((alias, threshold),))
+    return PoolSetup((Twin(alias, "f"), *men), personas, alias, MEN, None)
 
 
 def make_extraction_model():

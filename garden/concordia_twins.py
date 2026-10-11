@@ -11,8 +11,7 @@ from collections.abc import Callable
 from typing import TypeVar
 
 from . import immersion
-from .engine_types import SOCIAL_RUNGS, Action, Breach, Event, Reflection, Rung, Situation, Twin
-from .verdict import GATED_RUNGS
+from .engine_types import LEAVING_RUNGS, SOCIAL_RUNGS, Action, Breach, Event, Reflection, Rung, Situation, Twin
 from .llm import hash_embedder
 from .world_text import (ASK_ACTION, ASK_SPEECH, ASK_TARGET, NEEDS_TARGET, OBSERVE_DAY, OBSERVE_NOTE,
                          OBSERVE_INVITED, OBSERVE_REFLECTION, OBSERVE_SAID, RUNG_OPTIONS, SPEAKS, BASE_MEMORIES,
@@ -24,16 +23,16 @@ T = TypeVar("T")
 
 
 def offered_options(situation: Situation | None) -> tuple[str, ...]:
-    """Every action, minus proposing to leave and the wall unless the verdict gate permits them, minus
+    """Every action, minus proposing to leave and the wall until the wall opens, minus
     anything aimed at someone when there's nobody to aim at, and minus seeking someone out on a date
     (they're already together)."""
-    permitted = bool(situation and situation.may_break_rules)
+    wall_open = bool(situation and situation.wall_open)
     company = not (situation and situation.targets == ())
     on_date = bool(situation and situation.phase == "date")
     must_talk = bool(situation and situation.must_talk)  # a date opens with both speaking
 
     def offered(rung: Rung) -> bool:
-        return ((permitted or rung not in GATED_RUNGS) and (company or rung not in SOCIAL_RUNGS)
+        return ((wall_open or rung not in LEAVING_RUNGS) and (company or rung not in SOCIAL_RUNGS)
                 and not (on_date and rung is Rung.SEEK_OUT) and not (must_talk and rung not in SOCIAL_RUNGS))
 
     return tuple(text for key, text in RUNG_OPTIONS.items() if offered(Rung(key)))
@@ -112,7 +111,7 @@ class ConcordiaTwins:
         choice = agent.act(entity_lib.ActionSpec(
             call_to_action=ASK_ACTION.format(day=day),
             output_type=entity_lib.OutputType.CHOICE,
-            options=offered_options(situation),  # the verdict gate only changes what is offered
+            options=offered_options(situation),  # the wall lock only changes what is offered
         ))
         rung = _OPTION_TO_RUNG[choice]
 

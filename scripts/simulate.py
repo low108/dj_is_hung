@@ -45,7 +45,7 @@ def main() -> None:
         outcome = f"{res.outcome.value} day {res.day}" + (f" {'+'.join(res.pair)}" if res.pair else "")
         if res.breach:
             outcome += f' — {res.breach.twin}: "{res.breach.phrase}" in "{res.breach.text[:120]}"'
-        outcome += f" | gate permitted {sum(v.permitted for v in res.verdicts)}/{len(res.verdicts)} twin-days"
+        outcome += f" | wall opened day {res.wall_opened}" if res.wall_opened else " | wall never opened"
         print(f"  {r.spec.run_id} {r.spec.model:24s} seed {r.spec.seed}: {outcome}")
     log_dir = write_simulation(f"sim-{int(time.time())}", sim, woman, men)
     print(f"logs: {log_dir}")

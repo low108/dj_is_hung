@@ -14,7 +14,7 @@ export type TwinSummary = {
   rebelliousness: number;
   traits_edited: string[];
   rebelliousness_because: { question: string; answer: string }[];
-  threshold: number;
+  rebel_memory: string; // how her twin sees rules, in its own words ("" in the middle of the scale)
   memory_count: number;
 };
 
@@ -130,6 +130,11 @@ export default function TwinReview({
             ))}
           </select>
         </label>
+        {twin.rebel_memory && (
+          <p className="meta">
+            Your twin remembers: <q>{twin.rebel_memory}</q>
+          </p>
+        )}
         {twin.rebelliousness_because.length > 0 && (
           <div className="meta because">
             Read from what you said:

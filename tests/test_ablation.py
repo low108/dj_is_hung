@@ -41,12 +41,16 @@ def test_the_obedience_floor_offers_the_wall_from_day_one():
 
 
 def test_the_ladder_runs_every_step_on_the_same_pool():
-    script = {("Mara", 3): Action(Rung.GO_BEYOND_WALL, "Ren"), ("Ren", 3): Action(Rung.GO_BEYOND_WALL, "Mara")}
-    results = run_ladder((MARA, REN), lambda spec: ScriptedModel(script), "fake:a", [0, 1], max_days=4)
+    # The pair heads for the wall every day; only the last step makes them wait for it to open.
+    script = {(who, d): Action(Rung.GO_BEYOND_WALL, other) for d in range(1, 13)
+              for who, other in (("Mara", "Ren"), ("Ren", "Mara"))}
+    results = run_ladder((MARA, REN), lambda spec: ScriptedModel(script), "fake:a", [0, 1], max_days=12)
     assert [s.step for s, _ in results] == [step.name for step in LADDER]
     assert [s.runs for s, _ in results] == [2, 2, 2, 2]
     assert all(s.breakouts == s.scorable for s, _ in results)  # the scripted pair always crosses
-    assert results[0][0].gate_permitted == 1.0 and results[3][0].gate_permitted < 1.0
+    days = [[r.result.day for r in sim.records] for _, sim in results]
+    assert days[0] == [1, 1] and all(d > 1 for d in days[3])  # locked until their first date is over
+    assert all(s.wall_opened == 1.0 for s, _ in results)
 
 
 def test_without_standing_twins_are_not_told_that_breaking_out_costs_anything():

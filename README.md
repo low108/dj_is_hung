@@ -49,7 +49,7 @@ The data isn't redistributed here. Download `Speed Dating Data.csv` from [Kaggle
 
 - Only fields collected **before** the dates reach a twin (`garden/speed_dating.py`, `PRE_DATE_FIELDS`). Decisions, partner ratings and follow-up surveys are the answer key.
 - Every seed memory cites the field it came from. An optional LLM rewrite makes memories sound natural; rewrites with no valid source or with invented numbers are rejected.
-- The dataset has no personality inventory, so every twin uses the same neutral rebelliousness threshold.
+- The dataset has no personality inventory, so dataset twins carry no rebelliousness memory.
 - The data is anonymised; don't attempt to re-identify participants.
 
 ```bash

@@ -52,8 +52,6 @@ def serialize(result) -> dict:
         "standing": result.standing,
         "longing": {who: {n: round(v, 2) for n, v in d.items()} for who, d in result.longing.items()},
         "announcements": [{"day": a.day, "text": a.text} for a in result.announcements],
-        "verdicts": [{"day": v.day, "twin": v.twin, "score": v.score, "threshold": v.threshold,
-                      "permitted": v.permitted} for v in result.verdicts],
         "reflections": [{"day": r.day, "twin": r.twin, "text": r.text, "ratings": r.ratings}
                         for r in result.reflections],
         "events": [
@@ -203,7 +201,7 @@ def create_app(store: Store | None = None, log_runs: bool = False,
             sim = run_simulation(specs, twins,
                                  lambda spec: demo.make_twin_model(spec, personas, fake_scenario=req.scenario, woman=woman),
                                  observe=lambda spec: recorders[spec.run_id].observer,
-                                 on_finished=save_replay, thresholds=pool.thresholds,
+                                 on_finished=save_replay,
                                  **({"max_days": req.max_days} if req.max_days else {}))
             done = record | {"status": "done", "pool_iid": req.pool_iid, "my_twin": req.my_twin,
                              **serialize_simulation(sim, pool, highlight_model())}

@@ -15,8 +15,10 @@ export type TimelineEvent = {
 
 type Marker = { id: string; emoji: string; label: string; matches: (e: TimelineEvent) => boolean };
 
-// The moments worth jumping to (E5): separations, gatherings, seek-outs, proposals and wall crossings.
+// The moments worth jumping to (E5): the day the wall opens (#63), separations, gatherings, seek-outs,
+// proposals and wall crossings.
 const MARKERS: Marker[] = [
+  { id: "wall_open", emoji: "🚪", label: "Everyone has met", matches: (e) => e.announcement_kind === "wall_open" },
   { id: "separation", emoji: "💔", label: "Separation", matches: (e) => e.announcement_kind === "ended" },
   { id: "gathering", emoji: "🎉", label: "Gathering", matches: (e) => e.announcement_kind === "gathering" },
   { id: "seek_out", emoji: "👀", label: "Seek-out", matches: (e) => e.rung === "seek_out" },

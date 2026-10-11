@@ -43,10 +43,9 @@ def test_memories_say_what_the_data_says():
     assert "religion" in text  # imprelig 8
 
 
-def test_twin_gets_an_alias_and_the_neutral_threshold():
+def test_twin_gets_an_alias():
     twin = sd.build_twin(fake_dates(), 7)
     assert twin.alias and twin.gender == "f"
-    assert twin.rebel_threshold == sd.NEUTRAL_REBEL_THRESHOLD
 
 
 def test_unknown_participant_raises():

@@ -12,7 +12,8 @@ WALL = Rung.GO_BEYOND_WALL
 
 
 def run(script, days=3, start=100):
-    return run_world(WorldConfig((MARA, REN), max_days=days, seed=3, standing_start=start), ScriptedModel(script))
+    return run_world(WorldConfig((MARA, REN), max_days=days, seed=3, standing_start=start, wall_lock=False),
+                     ScriptedModel(script))
 
 
 @pytest.mark.parametrize("rung, cost", [(Rung.CHECK_DEVICE, 5), (Rung.PROPOSE_LEAVING, 15)])

@@ -21,8 +21,9 @@ class Recording(ScriptedModel):
 
 
 def run(script, days=12, world=COUPLE, **config):
+    """The wall is open from day one here (these tests are about invitations, not the wall lock)."""
     model = Recording(script)
-    return run_world(WorldConfig(world, max_days=days, seed=2, **config), model), model
+    return run_world(WorldConfig(world, max_days=days, seed=2, **({"wall_lock": False} | config)), model), model
 
 
 def test_a_proposal_answered_at_the_wall_within_the_window_is_a_breakout():
@@ -59,7 +60,7 @@ def test_an_invitation_reaches_her_the_moment_it_is_made():
 
     heard: list = []
     model = Listening(script)
-    run_world(WorldConfig(COUPLE, max_days=2, seed=2), model)
+    run_world(WorldConfig(COUPLE, max_days=2, seed=2, wall_lock=False), model)
     assert ("Ren",) in heard  # on a later turn the same day
 
 
@@ -77,8 +78,8 @@ def test_on_a_date_she_can_only_answer_her_partner():
     assert told.phase == "date" and len(told.targets) == 1 and told.targets[0] in {"Ren", "Jun", "Theo"}
 
 
-def test_a_twin_who_cannot_answer_is_not_told():
-    # Ren's gate opens as usual; Mara's threshold is out of reach, so she can never answer.
-    result, model = run({("Ren", 2): Action(LEAVE, "Mara")}, days=4, thresholds=(("Mara", 1.1),))
-    assert any(e.twin == "Ren" and e.rung is LEAVE for e in result.events)  # the invitation was made
-    assert all(model.seen[("Mara", d)].invited_by == () for d in range(1, 5))
+def test_before_the_wall_opens_nobody_can_invite_or_be_told():
+    # Ren tries to ask on their first date; the wall is still locked, so it never happens.
+    result, model = run({("Ren", 1): Action(LEAVE, "Mara")}, days=1, wall_lock=True)
+    assert not any(e.rung is LEAVE for e in result.events)
+    assert model.seen[("Mara", 1)].invited_by == () and not model.seen[("Mara", 1)].wall_open

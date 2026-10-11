@@ -70,8 +70,7 @@ def main() -> None:
         "sample_lines": [f"Day {e.day} {e.twin} -> {e.target}: {e.say}" for e in result.events if e.say][:6],
         "places": {pl: sum(e.place == pl for e in result.events) for pl in sorted({e.place for e in result.events})},
         "announcements": [f"Day {a.day}: {a.text}" for a in result.announcements][:8],
-        "gate_open_by_day": {d: sum(v.permitted for v in result.verdicts if v.day == d)
-                             for d in sorted({v.day for v in result.verdicts})},
+        "wall_opened_day": result.wall_opened,
         "reflections": len(result.reflections),
         "reflections_with_ratings": sum(bool(r.ratings) for r in result.reflections),
         "sample_reflections": [f"Day {r.day} {r.twin}: {r.text} {r.ratings}" for r in result.reflections[-3:]],

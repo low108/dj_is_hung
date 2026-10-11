@@ -121,10 +121,22 @@ class Coordinator:
             return Phase.GATHERING
         return Phase.DATE if self.assignment_of(who) else Phase.IDLE
 
+    def everyone_met(self) -> bool:
+        """Every pair that could be sent on a date has had one, and none is still on its first."""
+        pairs = self._possible_pairs()
+        running_first = any(self.dates[frozenset((p.first, p.second))] <= 1 for p in self.assignments)
+        return bool(pairs) and not running_first and all(self.dates[p] >= 1 for p in pairs)
+
+    def open_wall(self, day: int) -> None:
+        self._announce(day, "wall_open", "Everyone has had a date with everyone they could be paired with.")
+
+    def _possible_pairs(self) -> list[frozenset[str]]:
+        return [frozenset((a.alias, b.alias)) for i, a in enumerate(self.twins) for b in self.twins[i + 1:]
+                if compatible(a, b)]
+
     def rounds_complete(self) -> bool:
         """Every pair that could be sent on a date has had DATES_EACH (and none is still on one)."""
-        pairs = [frozenset((a.alias, b.alias)) for i, a in enumerate(self.twins) for b in self.twins[i + 1:]
-                 if compatible(a, b)]
+        pairs = self._possible_pairs()
         return bool(pairs) and not self.assignments and all(self.dates[p] >= DATES_EACH for p in pairs)
 
     def _bonded(self, x: str, y: str) -> bool:

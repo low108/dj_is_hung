@@ -28,8 +28,8 @@ class WithHer(ScriptedModel):
         return Action(Rung.REFLECT)
 
 
-def run(her=None, him=None, days=200, reflections=None):
-    return run_world(WorldConfig(WORLD, max_days=days, seed=5), WithHer(her, him, reflections))
+def run(her=None, him=None, days=200, reflections=None, wall_lock=False):
+    return run_world(WorldConfig(WORLD, max_days=days, seed=5, wall_lock=wall_lock), WithHer(her, him, reflections))
 
 
 def wall(say=""):

@@ -9,8 +9,9 @@ POOL = (MARA, REN, Twin("Jun", "m"), Twin("Theo", "m"))
 WALL, TALK, LEAVE = Rung.GO_BEYOND_WALL, Rung.TALK, Rung.PROPOSE_LEAVING
 
 
-def world(*twins, max_days=200):
-    return WorldConfig(twins=tuple(twins), max_days=max_days, seed=7)
+def world(*twins, max_days=200, wall_lock=False):
+    """The wall is open from day one unless asked (the wall lock has its own tests)."""
+    return WorldConfig(twins=tuple(twins), max_days=max_days, seed=7, wall_lock=wall_lock)
 
 
 def gathering_days(result) -> list[int]:

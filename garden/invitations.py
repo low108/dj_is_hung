@@ -9,8 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .engine_types import Action
-from .verdict import GATED_RUNGS
+from .engine_types import LEAVING_RUNGS, Action
 
 WINDOW = 2  # days an invitation stays open after the day it was made
 
@@ -32,7 +31,7 @@ class Invitations:
     def on_action(self, who: str, action: Action, day: int) -> None:
         """A proposal to leave or a lone wall attempt opens an invitation at once, so it can be answered
         the same day (in the same conversation) or within WINDOW days."""
-        if action.rung in GATED_RUNGS and action.target:
+        if action.rung in LEAVING_RUNGS and action.target:
             self.invite(who, action.target, day)
 
     def inviters_of(self, invitee: str, day: int) -> tuple[str, ...]:

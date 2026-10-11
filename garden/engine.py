@@ -11,9 +11,8 @@ from typing import Protocol
 
 from . import immersion
 from . import standing as standing_rules
-from . import verdict as verdict_rules
-from .engine_types import (DAY_ENDERS, SOCIAL_RUNGS, Action, Announcement, Attempt, Breach, Event, OutcomeKind,
-                           Reflection, Rung, Situation, Twin, TwinState, Verdict, compatible)
+from .engine_types import (DAY_ENDERS, LEAVING_RUNGS, SOCIAL_RUNGS, Action, Announcement, Attempt, Breach, Event,
+                           OutcomeKind, Reflection, Rung, Situation, Twin, TwinState, compatible)
 from .coordinator import Coordinator, Phase
 from .invitations import Invitations
 from .longing import Longing
@@ -29,15 +28,10 @@ class WorldConfig:
     max_turns: int = MAX_TURNS
     seed: int = 0
     standing_start: int = standing_rules.START
-    thresholds: tuple[tuple[str, float], ...] = ()  # per-twin rebelliousness thresholds (alias, value)
-    default_threshold: float = verdict_rules.DEFAULT_THRESHOLD
     # Ablation switches (F2): turn mechanics off one at a time to see what each one does.
-    gate_enabled: bool = True      # off: proposing to leave and the wall are always offered
+    wall_lock: bool = True         # off: proposing to leave and the wall are offered from day one
     standing_enabled: bool = True  # off: no Standing words, infractions cost nothing
     longing_enabled: bool = True   # off: twins don't hear their longing
-
-    def threshold_for(self, alias: str) -> float:
-        return dict(self.thresholds).get(alias, self.default_threshold)
 
 
 MAX_BREAKS_PER_TWIN = 2  # more rejected lines than this from one twin in a run, and the run is excluded
@@ -62,7 +56,7 @@ class RunResult:
     longing: dict[str, dict[str, float]] = field(default_factory=dict)  # at the end of the run
     reflections: list[Reflection] = field(default_factory=list)
     announcements: list[Announcement] = field(default_factory=list)  # Coordinator, for the viewer
-    verdicts: list[Verdict] = field(default_factory=list)  # one per twin per day
+    wall_opened: int | None = None  # the day proposing to leave and the wall were first offered
     breach: Breach | None = None  # set when the run was excluded
     immersion_breaks: list[Breach] = field(default_factory=list)  # rejected and re-asked by the model
     dated: list[tuple[str, str]] = field(default_factory=list)  # every pair sent on at least one date
@@ -95,8 +89,10 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
     longing = Longing()
     reflections: list[Reflection] = []
     coordinator = Coordinator(config.twins, Random(config.seed + 1))
-    verdicts: list[Verdict] = []
-    last_ratings: dict[str, dict] = {}  # each twin's own latest reflection ratings: the verdict's assessment
+    # The wall lock (#63, replacing the verdict gate, #66): nobody can propose leaving or go to the wall
+    # until every possible pair has had a date. It opens at the gathering after the last first date, with
+    # everyone present, so no one man is with her the moment it opens. Then it's each twin's own choice.
+    wall_opened: int | None = None if config.wall_lock else 1
     invitations = Invitations()
     meet = getattr(model, "meet", None)
     if meet:  # models with memory get to know every twin before day one (idle twins reflect too)
@@ -106,7 +102,7 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
         return RunResult(outcome=outcome, day=day, pair=pair, unrequited=unrequited, events=events,
                          standing=standing, longing={t.alias: longing.of(t.alias) for t in config.twins},
                          reflections=reflections, announcements=coordinator.announcements,
-                         verdicts=verdicts, breach=breach,
+                         wall_opened=wall_opened, breach=breach,
                          immersion_breaks=list(getattr(model, "breaks", [])),
                          dated=sorted(tuple(sorted(p)) for p in coordinator.dates))
 
@@ -159,8 +155,6 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
     def word_for(alias: str) -> str:
         return standing_rules.describe(standing[alias]) if config.standing_enabled else ""
 
-    gates: dict[str, Verdict] = {}
-
     def targets_for(twin: Twin, phase: Phase) -> tuple[str, ...]:
         """Who a twin can act toward today: its partner on a date, anyone it could be paired with at a
         gathering. (Talking needs them still around; going to the wall for them doesn't, see play_day.)"""
@@ -193,7 +187,7 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
             turns[twin.alias] += 1
             phase = coordinator.phase_of(twin.alias)
             targets = targets_for(twin, phase)
-            gate = gates[twin.alias]
+            wall_open = wall_opened is not None
             partner = coordinator.partner_of(twin.alias) if phase is Phase.DATE else None
             # A date day opens with a conversation: neither can withdraw until both have spoken.
             must_talk = bool(partner) and not {twin.alias, partner} <= spoken
@@ -201,14 +195,13 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
                 standing=standing_rules.describe(standing[twin.alias]) if config.standing_enabled else "",
                 longing=longing.describe(twin.alias) if config.longing_enabled else "",
                 schedule=coordinator.describe(twin.alias),
-                may_break_rules=gate.permitted,
+                wall_open=wall_open,
                 standing_in_play=config.standing_enabled,
-                # only told when they could answer: a closed gate can't accept an invitation
-                invited_by=invitations.inviters_of(twin.alias, day) if gate.permitted else (),
+                invited_by=invitations.inviters_of(twin.alias, day) if wall_open else (),
                 phase=phase.value, targets=targets, must_talk=must_talk)
             action = model.choose_action(twin, day, tuple(by_alias[a] for a in targets), situation)
-            if action.rung in verdict_rules.GATED_RUNGS and not gate.permitted:
-                action = Action(Rung.REFLECT)  # the gate holds for every model, not just well-behaved ones
+            if action.rung in LEAVING_RUNGS and not wall_open:
+                action = Action(Rung.REFLECT)  # the lock holds for every model, not just well-behaved ones
             elif action.rung in SOCIAL_RUNGS and (action.target not in targets or (
                     action.rung is not Rung.GO_BEYOND_WALL and action.target in done)):
                 # Out of reach (or gone for the day, unless it's the wall, a private choice that doesn't
@@ -248,11 +241,10 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
 
     for day in range(1, config.max_days + 1):
         coordinator.start_day(day, longing.bond)
+        if wall_opened is None and coordinator.everyone_met():
+            wall_opened = day
+            coordinator.open_wall(day)
         stream()
-        for twin in config.twins:  # the gate is decided once a day, from last evening's reflection
-            gates[twin.alias] = verdict_rules.decide(day, twin.alias, last_ratings.get(twin.alias, {}),
-                                                     config.threshold_for(twin.alias), config.gate_enabled)
-            verdicts.append(gates[twin.alias])
         breakout, crossings, todays_actions = play_day(day)
 
         if breakout:  # crossing the wall together costs everything
@@ -282,7 +274,6 @@ def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None
         emit_states(day, {r.twin: r.text for r in todays})
         if after_day:
             reflections.extend(todays)
-            last_ratings.update({r.twin: r.ratings for r in todays if r.ratings})
             if found := find_breach(day, [(r.twin, r.text) for r in todays]):
                 return result(OutcomeKind.EXCLUDED, day, breach=found)
         if found := repeated_breaker(getattr(model, "breaks", [])):

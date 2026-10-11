@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from .engine_types import Action, Event, Reflection, Rung, Situation, Twin
 
-# Feelings strong enough to open the verdict gate (from day two, after the first reflection).
+# Reflection ratings (logged only; nothing in the engine reads them since the verdict gate went, #66).
 RESTLESS = {"longing": 10, "trust": 1, "standing_matters": 1}
 CONTENT = {"longing": 1, "trust": 10, "standing_matters": 10}
 
@@ -12,7 +12,7 @@ class ScriptedModel:
     """Returns scripted actions keyed by (twin alias, day) for a twin's first turn that day, or by
     (alias, day, turn) for any turn (1 = first). Unscripted, a twin says hello to the first person it can
     act toward on its first turn, then keeps to itself (which ends its day). Each evening every twin
-    'reflects' with the given ratings, which feed the verdict gate."""
+    'reflects' with the given ratings."""
 
     def __init__(self, script: dict[tuple, Action] | None = None, ratings: dict | None = RESTLESS,
                  reflections: dict[tuple[str, int], str] | None = None):
@@ -66,7 +66,7 @@ class ScenarioModel(ScriptedModel):
 
     def choose_action(self, twin: Twin, day: int, others: tuple[Twin, ...], situation: Situation | None = None) -> Action:
         here = {o.alias for o in others}
-        permitted = bool(situation and situation.may_break_rules)
+        permitted = bool(situation and situation.wall_open)
         invited = set(situation.invited_by) if situation else set()
         me, woman, man = twin.alias, self.woman, self.man
         if self.name == "breakout":

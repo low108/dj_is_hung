@@ -6,7 +6,7 @@ from garden.llm import CountingModel, KeywordModel
 MARA, REN = Twin("Mara"), Twin("Ren")
 
 
-# Speech uses the first line; the evening reflection's ratings open the verdict gate from day 2.
+# Speech uses the first line; the evening reflection uses the whole text (its ratings are only logged).
 OPEN_GATE = "Come with me.\nRatings: longing=10; trust=1; standing_matters=1; on_my_mind=someone"
 
 
@@ -20,7 +20,7 @@ def test_concordia_twins_can_break_out_together():
         "Mara do now on day 3": "beyond the wall",
         "Ren do now on day 3": "beyond the wall",
     })
-    result = run_world(WorldConfig((MARA, REN), max_days=5, seed=1), model)
+    result = run_world(WorldConfig((MARA, REN), max_days=5, seed=1, wall_lock=False), model)
     assert result.outcome is OutcomeKind.BREAKOUT
     assert result.day == 3
     assert result.pair == ("Mara", "Ren")
@@ -31,7 +31,7 @@ def test_concordia_twins_can_break_out_together():
 
 def test_concordia_twins_one_sided_wall_is_unrequited():
     model, _ = twins({"Ren do now on day 2": "beyond the wall"})
-    result = run_world(WorldConfig((MARA, REN), max_days=3, seed=1), model)
+    result = run_world(WorldConfig((MARA, REN), max_days=3, seed=1, wall_lock=False), model)
     assert result.outcome is OutcomeKind.TIMEOUT
     assert [(a.twin, a.target) for a in result.unrequited] == [("Ren", "Mara")]
 

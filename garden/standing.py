@@ -25,8 +25,8 @@ def charge(standing: int, rung: Rung) -> int:
 
 
 def compliant_day(standing: int, ceiling: int) -> int:
-    """A day without infractions earns a little back, never above the run's starting level: over a
-    long run a low-price twin must not drift up to a high price's Standing."""
+    """A day without infractions earns a little back, never above the run's starting level, so a long
+    run can't wash out what a twin has given up."""
     return min(ceiling, standing + COMPLIANT_DAY_GAIN) if standing < ceiling else standing
 
 

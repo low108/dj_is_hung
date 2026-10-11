@@ -16,7 +16,6 @@ import pandas as pd
 from .paths import DATA_DIR
 
 DEFAULT_PATH = DATA_DIR / "raw" / "speed_dating.csv"
-NEUTRAL_REBEL_THRESHOLD = 0.5  # the dataset has no personality inventory, so every twin gets the same one
 
 INTERESTS = ["sports", "tvsports", "exercise", "dining", "museums", "art", "hiking", "gaming", "clubbing",
              "reading", "tv", "theater", "movies", "concerts", "music", "shopping", "yoga"]
@@ -75,7 +74,6 @@ class TwinRecord:
     iid: int
     gender: str
     memories: list[Memory] = field(default_factory=list)
-    rebel_threshold: float = NEUTRAL_REBEL_THRESHOLD
 
     def persona_text(self) -> str:
         return "\n".join(m.text for m in self.memories)

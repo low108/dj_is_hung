@@ -44,7 +44,7 @@ class FeedEvent:
     say: str
     standing: str                    # the twin's Standing in words after the action ("" if not in play)
     announcement: str | None
-    announcement_kind: str | None    # paired, ended, shortened, changed, gathering, rumour
+    announcement_kind: str | None    # paired, ended, shortened, changed, gathering, rumour, wall_open
     line: str
 
     def to_dict(self) -> dict:

@@ -55,7 +55,8 @@ def test_a_breakout_day_still_gets_a_final_snapshot_with_standing_gone():
 
     script = {("Mara", 2): A(Rung.GO_BEYOND_WALL, "Ren"), ("Ren", 2): A(Rung.GO_BEYOND_WALL, "Mara")}
     states = []
-    run_world(WorldConfig(WORLD[:2], max_days=5, seed=1), ScriptedModel(script), on_state=states.append)
+    run_world(WorldConfig(WORLD[:2], max_days=5, seed=1, wall_lock=False), ScriptedModel(script),
+              on_state=states.append)
     last = {s.twin: s for s in states[-1]}
     assert states[-1][0].day == 2 and "no standing" in last["Mara"].standing.lower()
 
