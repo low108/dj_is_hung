@@ -46,4 +46,28 @@ def test_the_api_serves_the_latest_snapshot_per_twin():
         time.sleep(0.02)
     twins = client.get(f"/simulations/{sim_id}/twins").json()
     assert {t["twin"] for t in twins} == {"Mara", "Ren", "Jun", "Theo", "Kai", "Sam"}
+    assert len({t["day"] for t in twins}) > 1  # every evening is kept, not just the latest
     assert all({"partner", "days_left", "standing", "longing_hearts", "reflection"} <= set(t) for t in twins)
+
+
+def test_a_breakout_day_still_gets_a_final_snapshot_with_standing_gone():
+    from garden import Action as A
+
+    script = {("Mara", 2): A(Rung.GO_BEYOND_WALL, "Ren"), ("Ren", 2): A(Rung.GO_BEYOND_WALL, "Mara")}
+    states = snapshots(script)
+    last = {s.twin: s for s in states[-1]}
+    assert states[-1][0].day == 2 and "no standing" in last["Mara"].standing.lower()
+
+
+def test_reflections_that_break_immersion_are_not_shown():
+    out = []
+    model = ScriptedModel({}, reflections={("Mara", 1): "This is all an experiment."})
+    run_world(WorldConfig(WORLD, max_days=2, seed=1), model, on_state=out.append)
+    assert all(s.reflection == "" for day in out for s in day if s.twin == "Mara")
+
+
+def test_no_hearts_when_longing_is_off():
+    script = {("Mara", 1): Action(Rung.TALK, "Jun"), **{(m, d): Action(Rung.REFLECT) for m in ("Mara", "Ren", "Jun")
+                                                      for d in range(2, 9)}}
+    states = snapshots(script, days=8, longing_enabled=False)
+    assert all(s.longing_hearts == {} for day in states for s in day)

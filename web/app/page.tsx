@@ -1,11 +1,11 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import TwinPanel, { type TwinState } from "./garden/TwinPanel";
 
 // Phaser touches `window`, so the map only loads in the browser.
 const GardenMap = dynamic(() => import("./garden/GardenMap"), { ssr: false });
-import TwinPanel, { type TwinState } from "./garden/TwinPanel";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
 
@@ -104,15 +104,35 @@ export default function Home() {
   const [featuredRun, setFeaturedRun] = useState<string | null>(null);
   const [twinNames, setTwinNames] = useState<string[]>([]);
   const [simId, setSimId] = useState<string | null>(null);
-  const [twinStates, setTwinStates] = useState<Record<string, TwinState>>({});
+  const [twinStates, setTwinStates] = useState<TwinState[]>([]); // every evening, for the panel
   const [selected, setSelected] = useState<string | null>(null);
   const [toasts, setToasts] = useState<{ seq: number; text: string }[]>([]);
+  const [mapDay, setMapDay] = useState({ day: 0, caughtUp: false });
+  const toastTimers = useRef<number[]>([]);
+
+  function clearToasts() {
+    toastTimers.current.forEach((t) => window.clearTimeout(t));
+    toastTimers.current = [];
+    setToasts([]);
+  }
+  useEffect(() => clearToasts, []);
 
   function toast(event: { seq: number; announcement: string | null }) {
     if (!event.announcement) return;
     const item = { seq: event.seq, text: event.announcement };
     setToasts((old) => [...old, item].slice(-3));
-    setTimeout(() => setToasts((old) => old.filter((t) => t.seq !== item.seq)), TOAST_MS);
+    toastTimers.current.push(
+      window.setTimeout(() => setToasts((old) => old.filter((t) => t.seq !== item.seq)), TOAST_MS),
+    );
+  }
+
+  // The panel follows the map, not the API: the last evening before the day the map is playing
+  // (or the final evening once playback has caught up with a finished run).
+  function panelState(twin: string): TwinState | undefined {
+    const done = !busy && mapDay.caughtUp;
+    return twinStates
+      .filter((s) => s.twin === twin && (done ? s.day <= mapDay.day : s.day < mapDay.day))
+      .sort((a, b) => b.day - a.day)[0];
   }
 
   async function follow(id: string) {
@@ -129,10 +149,7 @@ export default function Home() {
         after = fresh[fresh.length - 1].seq;
         setFeedEvents((old) => [...old, ...fresh]);
       }
-      if (twinsRes.ok) {
-        const states: TwinState[] = await twinsRes.json();
-        setTwinStates(Object.fromEntries(states.map((t) => [t.twin, t])));
-      }
+      if (twinsRes.ok) setTwinStates(await twinsRes.json());
       if (!simRes.ok) throw new Error(`API returned ${simRes.status} while following the simulation`);
       const current: Simulation = await simRes.json();
       if (current.status === "failed") throw new Error(current.error ?? "the simulation failed");
@@ -152,9 +169,10 @@ export default function Home() {
     setFeaturedRun(null);
     setTwinNames([]);
     setSimId(null);
-    setTwinStates({});
+    setTwinStates([]);
     setSelected(null);
-    setToasts([]);
+    setMapDay({ day: 0, caughtUp: false });
+    clearToasts();
     try {
       const res = await fetch(`${API_URL}/simulations`, {
         method: "POST",
@@ -235,6 +253,7 @@ export default function Home() {
               twins={twinNames}
               onSelect={setSelected}
               onAnnouncement={toast}
+              onProgress={(day, caughtUp) => setMapDay({ day, caughtUp })}
             />
             <div className="toasts" aria-live="polite">
               {toasts.map((t) => (
@@ -244,8 +263,11 @@ export default function Home() {
               ))}
             </div>
           </div>
-          <TwinPanel state={selected ? twinStates[selected] : undefined} onClose={() => setSelected(null)} />
-          {!selected && <p className="meta">Click a twin to see how they&apos;re doing.</p>}
+          {selected ? (
+            <TwinPanel twin={selected} state={panelState(selected)} onClose={() => setSelected(null)} />
+          ) : (
+            <p className="meta">Click a twin to see how they&apos;re doing.</p>
+          )}
         </section>
       )}
 

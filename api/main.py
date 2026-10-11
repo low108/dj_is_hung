@@ -173,8 +173,9 @@ def create_app(store: SimulationStore | None = None, log_runs: bool = False) -> 
 
     @app.get("/simulations/{sim_id}/twins")
     def get_twins(sim_id: str) -> list[dict]:
-        """Each twin of the featured run as of its latest evening: partner, time left, Standing in words,
-        longing as hearts and today's reflection. For the viewer's side panel only."""
+        """Every evening's snapshot of every twin in the featured run (partner, time left, Standing in words,
+        longing as hearts, that evening's reflection), so the side panel can show the evening the map has
+        reached rather than the latest one. For the viewer only."""
         if app.state.store.get(sim_id) is None:
             raise HTTPException(404, "simulation not found")
         return app.state.store.twin_states(sim_id)

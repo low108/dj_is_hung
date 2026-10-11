@@ -81,8 +81,8 @@ def run_one(spec: RunSpec, twins: tuple[Twin, ...], make_model: Callable[[RunSpe
     start = time.perf_counter()
     try:
         world = WorldConfig(twins, seed=spec.seed, standing_start=spec.price.standing, **config)
-        observer = observer or Observer()
-        result = run_world(world, make_model(spec), observer.on_feed, observer.on_state)  # fresh model per run
+        hooks = observer or Observer()
+        result = run_world(world, make_model(spec), hooks.on_feed, hooks.on_state)  # a fresh model per run
         return RunRecord(spec, result, time.perf_counter() - start)
     except Exception as e:  # one failed run must not sink the simulation
         return RunRecord(spec, None, time.perf_counter() - start, f"{type(e).__name__}: {e}")
@@ -96,8 +96,8 @@ def run_simulation(specs: list[RunSpec], twins: tuple[Twin, ...], make_model: Ca
     first = featured_spec(specs)
 
     def go(spec: RunSpec) -> RunRecord:
-        hook = featured(spec) if featured and first and spec.run_id == first.run_id else None
-        return run_one(spec, twins, make_model, hook, **config)
+        observer = featured(spec) if featured and first and spec.run_id == first.run_id else None
+        return run_one(spec, twins, make_model, observer, **config)
 
     with ThreadPoolExecutor(max_workers=max(1, parallelism)) as pool:
         records = list(pool.map(go, specs))

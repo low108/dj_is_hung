@@ -11,8 +11,33 @@ export type TwinState = {
   reflection: string;
 };
 
-export default function TwinPanel({ state, onClose }: { state: TwinState | undefined; onClose: () => void }) {
-  if (!state) return null;
+function timeLeft(daysLeft: number | null): string {
+  if (daysLeft === null) return "";
+  if (daysLeft <= 0) return "their time together ends tonight";
+  return daysLeft === 1 ? "one more day" : `${daysLeft} more days`;
+}
+
+export default function TwinPanel({
+  twin,
+  state,
+  onClose,
+}: {
+  twin: string;
+  state: TwinState | undefined;
+  onClose: () => void;
+}) {
+  if (!state)
+    return (
+      <aside className="twin-panel" data-testid="twin-panel">
+        <header>
+          <h3>{twin}</h3>
+          <button className="link" onClick={onClose} aria-label="Close">
+            ✕
+          </button>
+        </header>
+        <p className="meta">Nothing to report until the first evening.</p>
+      </aside>
+    );
   const hearts = Object.entries(state.longing_hearts).sort((a, b) => b[1] - a[1]);
   return (
     <aside className="twin-panel" data-testid="twin-panel">
@@ -26,9 +51,7 @@ export default function TwinPanel({ state, onClose }: { state: TwinState | undef
       <dl>
         <dt>Partner</dt>
         <dd>
-          {state.partner
-            ? `${state.partner}, ${state.days_left === 1 ? "one more day" : `${state.days_left} more days`}`
-            : "Between assignments"}
+          {state.partner ? `${state.partner}, ${timeLeft(state.days_left)}` : "Between assignments"}
         </dd>
         {state.standing && (
           <>

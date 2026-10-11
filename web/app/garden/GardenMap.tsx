@@ -37,11 +37,13 @@ export default function GardenMap({
   twins,
   onSelect,
   onAnnouncement,
+  onProgress,
 }: {
   events: MapEvent[];
   twins: string[];
   onSelect?: (twin: string) => void;
   onAnnouncement?: (event: MapEvent) => void; // called when playback reaches it, so toasts match the map
+  onProgress?: (day: number, caughtUp: boolean) => void; // the day playback is on; caughtUp when the queue is empty
 }) {
   const host = useRef<HTMLDivElement>(null);
   const queue = useRef<MapEvent[]>([]);
@@ -51,6 +53,9 @@ export default function GardenMap({
   onSelectRef.current = onSelect;
   const onAnnouncementRef = useRef(onAnnouncement);
   onAnnouncementRef.current = onAnnouncement;
+  const onProgressRef = useRef(onProgress);
+  onProgressRef.current = onProgress;
+  const playingDay = useRef(0);
 
   // New events join the queue (only ones not seen yet, in seq order).
   useEffect(() => {
@@ -127,18 +132,28 @@ export default function GardenMap({
       function playNext(scene: Phaser.Scene) {
         if (busy || cancelled) return;
         // Announcements become toasts at this point in playback; anything else not drawable is skipped.
+        const reached = (e: MapEvent) => {
+          playingDay.current = e.day;
+          onProgressRef.current?.(e.day, false);
+        };
         let next = queue.current.shift();
         while (next && !(next.twin && sprites.has(next.twin) && isPlace(next.place))) {
+          reached(next);
           if (next.announcement) onAnnouncementRef.current?.(next);
           next = queue.current.shift();
         }
-        if (!next || !next.twin || !isPlace(next.place)) return;
+        if (!next || !next.twin || !isPlace(next.place)) {
+          onProgressRef.current?.(playingDay.current, true);
+          return;
+        }
+        reached(next);
         const s = sprites.get(next.twin)!;
         busy = true;
         s.emoji.setText(next.emoji);
-        if (next.say) {
-          s.bubble.setText(next.say).setVisible(true);
-          scene.time.delayedCall(BUBBLE_MS, () => s.bubble.text === next!.say && s.bubble.setVisible(false));
+        const line = next.say;
+        if (line) {
+          s.bubble.setText(line).setVisible(true);
+          scene.time.delayedCall(BUBBLE_MS, () => s.bubble.text === line && s.bubble.setVisible(false));
         }
         const target = spotFor(next.place, s.slot);
         finder.findPath(s.at.col, s.at.row, target.col, target.row, (path: { x: number; y: number }[] | null) => {
