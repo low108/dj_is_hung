@@ -4,7 +4,8 @@ Seam: `run_world(config, model) -> RunResult`. Models decide actions; the engine
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass, field, replace
 from random import Random
 from typing import Protocol
 
@@ -60,7 +61,12 @@ class RunResult:
         return self.outcome is not OutcomeKind.EXCLUDED
 
 
-def run_world(config: WorldConfig, model: Model) -> RunResult:
+FeedHook = Callable[[Event | Announcement, str], None]
+
+
+def run_world(config: WorldConfig, model: Model, on_feed: FeedHook | None = None) -> RunResult:
+    """Run one world. `on_feed(item, standing_word)` is called for every twin action and every Coordinator
+    announcement the moment it happens (the live feed uses it); it never changes the run."""
     rng = Random(config.seed)
     events: list[Event] = []
     unrequited: list[Attempt] = []
@@ -84,12 +90,31 @@ def run_world(config: WorldConfig, model: Model) -> RunResult:
                 return Breach(day, twin, phrase, text)
         return None
 
+    emitted = 0  # announcements already streamed
+
+    def stream(item: Event | None = None, word: str = "") -> None:
+        """Stream an action (if any), then every announcement not yet streamed, which includes any the
+        action just caused, so announcements always follow what caused them."""
+        nonlocal emitted
+        if not on_feed:
+            return
+        if item is not None:
+            on_feed(item, word)
+        for a in coordinator.announcements[emitted:]:
+            on_feed(a, "")
+        emitted = len(coordinator.announcements)
+
+    def word_for(alias: str) -> str:
+        return standing_rules.describe(standing[alias]) if config.standing_enabled else ""
+
     for day in range(1, config.max_days + 1):
         coordinator.start_day(day, longing.bond)
+        stream()
         order = list(config.twins)
         rng.shuffle(order)  # nobody gets to act first every day
         crossings: dict[str, str] = {}
         actions: dict[str, Action] = {}
+        placed: dict[str, str] = {}
         for twin in order:
             others = tuple(t for t in config.twins if t != twin)
             verdict = verdict_rules.decide(day, twin.alias, last_ratings.get(twin.alias, {}),
@@ -110,23 +135,27 @@ def run_world(config: WorldConfig, model: Model) -> RunResult:
             coordinator.on_action(day, twin.alias, action)
             if action.rung is Rung.GO_BEYOND_WALL and action.target:
                 crossings[twin.alias] = action.target
+            before = standing[twin.alias]
+            if config.standing_enabled:
+                standing[twin.alias] = standing_rules.after(before, action.rung)
+            placed[twin.alias] = coordinator.place_for(twin.alias, action, placed)
+            event = Event(day, twin.alias, action.rung, action.target, action.say, before,
+                          standing[twin.alias], placed[twin.alias])
+            events.append(event)
+            # speech that breaks immersion ends the run as excluded; don't put it on screen
+            shown = event if not immersion.breaking_phrase(action.say) else replace(event, say="")
+            stream(shown, word_for(twin.alias))
 
         # A breakout needs both to choose each other: on the same day (decided privately), or by answering
         # an invitation the other made on an earlier day that is still open.
         breakout = next((tuple(sorted((a, b))) for a, b in crossings.items()
                          if crossings.get(b) == a or invitations.is_open(b, a, day)), None)
 
-        placed: dict[str, str] = {}
-        for twin in order:
-            action, before = actions[twin.alias], standing[twin.alias]
-            crossed = breakout is not None and twin.alias in breakout
-            if crossed:
-                standing[twin.alias] = 0
-            elif config.standing_enabled:
-                standing[twin.alias] = standing_rules.after(before, action.rung)
-            placed[twin.alias] = coordinator.place_for(twin.alias, action, placed)
-            events.append(Event(day, twin.alias, action.rung, action.target, action.say, before,
-                                standing[twin.alias], placed[twin.alias]))
+        if breakout:  # crossing the wall together costs everything
+            for i, e in enumerate(events):
+                if e.day == day and e.twin in breakout:
+                    standing[e.twin] = 0
+                    events[i] = replace(e, standing_after=0)
 
         todays_events = [e for e in events if e.day == day]
         if found := find_breach(day, [(e.twin, e.say) for e in todays_events]):

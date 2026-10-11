@@ -84,10 +84,12 @@ class Reflection:
 
 @dataclass(frozen=True)
 class Announcement:
-    """Something the Coordinator announced, for logs and the viewer."""
+    """Something the Coordinator announced, for logs and the viewer. `kind` lets the viewer put markers
+    on its timeline: paired, ended, shortened, changed, gathering, rumour."""
 
     day: int
     text: str
+    kind: str = ""
 
 
 @dataclass(frozen=True)

@@ -70,8 +70,8 @@ class Coordinator:
     _rumour_tomorrow: bool = False
     _bonds: Bonds = field(default_factory=dict)
 
-    def _announce(self, day: int, text: str) -> None:
-        self.announcements.append(Announcement(day, text))
+    def _announce(self, day: int, kind: str, text: str) -> None:
+        self.announcements.append(Announcement(day, text, kind))
 
     # --- daily schedule -------------------------------------------------------------------
     def start_day(self, day: int, bonds: Bonds) -> None:
@@ -80,17 +80,17 @@ class Coordinator:
         for pair in list(self.assignments):
             if pair.days_left <= 0:
                 self.assignments.remove(pair)
-                self._announce(day, f"{pair.names}: your time together has ended.")
+                self._announce(day, "ended", f"{pair.names}: your time together has ended.")
             elif self._bonded(pair.first, pair.second) and pair.days_left > SHORT[1]:
                 pair.days_left = self.rng.randint(*SHORT)
-                self._announce(day, f"{pair.names}: {pair.days_left} more day(s).")
+                self._announce(day, "shortened", f"{pair.names}: {pair.days_left} more day(s).")
         self._pair_unassigned(day)
         self.gathering_today = self.rng.random() < GATHERING_RATE
         if self.gathering_today:
-            self._announce(day, "Tonight there is a gathering at the hall. Everyone attends.")
+            self._announce(day, "gathering", "Tonight there is a gathering at the hall. Everyone attends.")
         self.rumour_today, self._rumour_tomorrow = self._rumour_tomorrow, False
         if self.rumour_today:
-            self._announce(day, RUMOUR)
+            self._announce(day, "rumour", RUMOUR)
 
     def end_day(self) -> None:
         for pair in self.assignments:
@@ -113,7 +113,7 @@ class Coordinator:
             taken |= {a.alias, b.alias}
             days = self.rng.randint(*(SHORT if self._bonded(a.alias, b.alias) else LONG))
             self.assignments.append(Assignment(a.alias, b.alias, days))
-            self._announce(day, f"{a.alias} and {b.alias}: paired for {days} day(s).")
+            self._announce(day, "paired", f"{a.alias} and {b.alias}: paired for {days} day(s).")
 
     # --- queries ----------------------------------------------------------------------------
     def assignment_of(self, who: str) -> Assignment | None:
@@ -148,7 +148,7 @@ class Coordinator:
             # Checking early changes things, but never lets a bonded pair stay together longer.
             span = SHORT if self._bonded(pair.first, pair.second) else RESHUFFLE
             pair.days_left = self.rng.randint(*span)
-            self._announce(day, f"{pair.names}: your time has been changed.")
+            self._announce(day, "changed", f"{pair.names}: your time has been changed.")
 
     def place_for(self, who: str, action: Action, placed: dict[str, str]) -> str:
         """Where an action happens. On a gathering day everyone is at the hall (unless at the wall);

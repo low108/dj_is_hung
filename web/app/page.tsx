@@ -24,9 +24,13 @@ type Ranked = {
   ci_high: number;
 };
 
+type FeedEvent = { seq: number; day: number; twin: string | null; emoji: string; say: string; line: string };
+
 type Simulation = {
   id: string;
-  status: "running" | "done";
+  status: "running" | "done" | "failed";
+  error?: string;
+  featured_run?: string;
   runs?: { run_id: string }[];
   wall_seconds?: number;
   ranking?: Ranked[];
@@ -79,23 +83,54 @@ export default function Home() {
   const [sim, setSim] = useState<Simulation | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [feedEvents, setFeedEvents] = useState<FeedEvent[]>([]);
+  const [featuredRun, setFeaturedRun] = useState<string | null>(null);
+
+  async function follow(id: string) {
+    // Poll the featured run's events and the simulation until it's done (Firestore listeners later).
+    let after = -1;
+    for (;;) {
+      const [eventsRes, simRes] = await Promise.all([
+        fetch(`${API_URL}/simulations/${id}/events?after=${after}`),
+        fetch(`${API_URL}/simulations/${id}`),
+      ]);
+      const fresh: FeedEvent[] = eventsRes.ok ? await eventsRes.json() : [];
+      if (fresh.length) {
+        after = fresh[fresh.length - 1].seq;
+        setFeedEvents((old) => [...old, ...fresh]);
+      }
+      if (!simRes.ok) throw new Error(`API returned ${simRes.status} while following the simulation`);
+      const current: Simulation = await simRes.json();
+      if (current.status === "failed") throw new Error(current.error ?? "the simulation failed");
+      if (current.status === "done") {
+        setSim(current);
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
 
   async function start() {
     setBusy(true);
     setError(null);
     setSim(null);
+    setFeedEvents([]);
+    setFeaturedRun(null);
     try {
       const res = await fetch(`${API_URL}/simulations`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           scenario,
+          background: true,
           pool_iid: poolIid ? Number(poolIid) : null,
           ...(model === "fake" ? {} : { models: [model] }),
         }),
       });
       if (!res.ok) throw new Error(`API returned ${res.status}`);
-      setSim(await res.json());
+      const started: Simulation = await res.json();
+      setFeaturedRun(started.featured_run ?? null);
+      await follow(started.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -148,6 +183,22 @@ export default function Home() {
         <p className="error">
           Couldn&apos;t reach the API at {API_URL}: {error}
         </p>
+      )}
+
+      {feedEvents.length > 0 && (
+        <section className="result feed" data-testid="feed">
+          <h2>
+            {busy ? "Live" : "Finished"}: the Garden, run {featuredRun}
+          </h2>
+          <ol>
+            {feedEvents.map((e) => (
+              <li key={e.seq} className={e.twin ? "" : "announcement"}>
+                {e.emoji} {e.line}
+                {e.say ? ` “${e.say}”` : ""}
+              </li>
+            ))}
+          </ol>
+        </section>
       )}
 
       {sim && (
