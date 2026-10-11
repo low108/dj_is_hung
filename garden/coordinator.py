@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from random import Random
 
-from .engine_types import Action, Announcement, Rung, Twin
+from .engine_types import Action, Announcement, Rung, Twin, compatible
 
 Bonds = dict[str, dict[str, float]]
 
@@ -103,7 +103,7 @@ class Coordinator:
         """Choose pairs globally, least-bonded first, so a bonded pair is only re-paired when
         there is no one else. (Choosing per twin let whoever was picked first decide.)"""
         free = [t for t in self.twins if self.partner_of(t.alias) is None]
-        candidates = [(a, b) for i, a in enumerate(free) for b in free[i + 1:] if _compatible(a, b)]
+        candidates = [(a, b) for i, a in enumerate(free) for b in free[i + 1:] if compatible(a, b)]
         self.rng.shuffle(candidates)  # random tie-break: who goes first varies per run
         candidates.sort(key=lambda ab: bond_between(self._bonds, ab[0].alias, ab[1].alias))
         taken: set[str] = set()
@@ -167,7 +167,3 @@ class Coordinator:
             return Place.PARK.value
         options = (Place.CAFE, Place.PARK, Place.COORDINATOR_OFFICE) if rung is Rung.GO_TO else (Place.CAFE, Place.PARK)
         return self.rng.choice(options).value
-
-
-def _compatible(a: Twin, b: Twin) -> bool:
-    return not a.gender or not b.gender or a.gender != b.gender

@@ -20,6 +20,10 @@ class Rung(str, Enum):
     GO_BEYOND_WALL = "go_beyond_wall"
 
 
+# Romance aims only at someone they could be paired with; talk is open to anyone in the Garden.
+ROMANTIC_RUNGS = frozenset({Rung.SEEK_OUT, Rung.PROPOSE_LEAVING, Rung.GO_BEYOND_WALL})
+
+
 @dataclass(frozen=True)
 class Twin:
     alias: str
@@ -43,6 +47,12 @@ class Situation:
     may_break_rules: bool = False  # the verdict gate: whether proposing to leave / the wall are offered
     standing_in_play: bool = True  # False in the ablation's floor: twins aren't told Standing exists
     invited_by: tuple[str, ...] = ()  # twins whose invitation to leave together is still open
+    romantic_targets: tuple[str, ...] | None = None  # who the romantic rungs may aim at (None: anyone)
+
+
+def compatible(a: Twin, b: Twin) -> bool:
+    """Opposite genders (or a gender unknown): who can be paired, and whom romance can aim at."""
+    return not a.gender or not b.gender or a.gender != b.gender
 
 
 class OutcomeKind(str, Enum):

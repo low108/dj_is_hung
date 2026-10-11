@@ -52,10 +52,23 @@ def test_the_invited_twin_hears_about_it_while_it_is_open():
 
 
 def test_the_inviters_latest_choice_wins():
-    # Ren asks Mara to leave, then changes his mind and asks Theo instead.
-    result, _ = run({("Ren", 2): Action(LEAVE, "Mara"), ("Ren", 3): Action(LEAVE, "Theo"),
-                     ("Mara", 4): Action(WALL, "Ren")})
+    # Ren asks Mara to leave, then changes his mind and asks Ada instead.
+    world = (*WORLD, Twin("Ada", "f"))
+    script = {("Ren", 2): Action(LEAVE, "Mara"), ("Ren", 3): Action(LEAVE, "Ada"), ("Mara", 4): Action(WALL, "Ren")}
+    result = run_world(WorldConfig(world, max_days=8, seed=2), Recording(script))
     assert result.outcome is OutcomeKind.TIMEOUT  # his invitation to Mara was withdrawn on day 3
+
+
+def test_romance_aims_only_at_someone_they_could_be_paired_with():
+    # Jun proposes to Ren and goes to the wall for him: both men, so neither counts as romance.
+    script = {("Jun", 2): Action(LEAVE, "Ren", "Come away with me."), ("Jun", 3): Action(WALL, "Ren"),
+              ("Ren", 3): Action(WALL, "Jun")}
+    result, model = run(script)
+    assert result.outcome is OutcomeKind.TIMEOUT
+    jun = [e for e in result.events if e.twin == "Jun" and e.day in (2, 3)]
+    assert [e.rung for e in jun] == [Rung.TALK, Rung.TALK] and jun[0].say == "Come away with me."
+    assert model.seen[("Jun", 2)].romantic_targets == ("Mara",)
+    assert model.seen[("Mara", 2)].romantic_targets == ("Ren", "Jun", "Theo")
 
 
 def test_a_twin_who_cannot_answer_is_not_told():
