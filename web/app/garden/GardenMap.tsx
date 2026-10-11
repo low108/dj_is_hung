@@ -11,12 +11,17 @@ export type MapEvent = {
   twin: string | null;
   place: string | null;
   emoji: string;
+  say: string;
+  announcement: string | null;
 };
+
+const BUBBLE_MS = 2600; // how long a line of speech stays above a twin
 
 type Sprite = {
   body: Phaser.GameObjects.Arc;
   label: Phaser.GameObjects.Text;
   emoji: Phaser.GameObjects.Text;
+  bubble: Phaser.GameObjects.Text;
   at: Tile;
   slot: number;
 };
@@ -27,11 +32,25 @@ const COLORS = [0xd1495b, 0x2e86ab, 0xf18f01, 0x6a4c93, 0x3d8361, 0x8d6346, 0x24
 /** The Garden drawn with Phaser. Plays feed events in order through a queue, walking each twin to
  * the place of its action along an EasyStar path; it speeds up when a live backlog builds.
  * Give it a `key` per simulation: a new run starts with a fresh map, queue and cursor. */
-export default function GardenMap({ events, twins }: { events: MapEvent[]; twins: string[] }) {
+export default function GardenMap({
+  events,
+  twins,
+  onSelect,
+  onAnnouncement,
+}: {
+  events: MapEvent[];
+  twins: string[];
+  onSelect?: (twin: string) => void;
+  onAnnouncement?: (event: MapEvent) => void; // called when playback reaches it, so toasts match the map
+}) {
   const host = useRef<HTMLDivElement>(null);
   const queue = useRef<MapEvent[]>([]);
   const seen = useRef(-1);
   const resumePlayback = useRef<(() => void) | null>(null);
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
+  const onAnnouncementRef = useRef(onAnnouncement);
+  onAnnouncementRef.current = onAnnouncement;
 
   // New events join the queue (only ones not seen yet, in seq order).
   useEffect(() => {
@@ -77,7 +96,20 @@ export default function GardenMap({ events, twins }: { events: MapEvent[]; twins
             const body = this.add.circle(at.col * TILE + TILE / 2, at.row * TILE + TILE / 2, 6, COLORS[i % COLORS.length]);
             const label = this.add.text(0, 0, name, { fontSize: "10px", color: "#1f1d1a" }).setOrigin(0.5, 0);
             const emoji = this.add.text(0, 0, "", { fontSize: "12px" }).setOrigin(0.5, 1);
-            const sprite = { body, label, emoji, at, slot: i };
+            const bubble = this.add
+              .text(0, 0, "", {
+                fontSize: "10px",
+                color: "#1f1d1a",
+                backgroundColor: "#ffffffee",
+                padding: { x: 4, y: 2 },
+                wordWrap: { width: 140 },
+              })
+              .setOrigin(0.5, 1)
+              .setDepth(10)
+              .setVisible(false);
+            body.setInteractive({ useHandCursor: true }).on("pointerdown", () => onSelectRef.current?.(name));
+            label.setInteractive({ useHandCursor: true }).on("pointerdown", () => onSelectRef.current?.(name));
+            const sprite = { body, label, emoji, bubble, at, slot: i };
             sprites.set(name, sprite);
             attachLabels(sprite);
           });
@@ -89,17 +121,25 @@ export default function GardenMap({ events, twins }: { events: MapEvent[]; twins
       function attachLabels(s: Sprite) {
         s.label.setPosition(s.body.x, s.body.y + 7);
         s.emoji.setPosition(s.body.x, s.body.y - 7);
+        s.bubble.setPosition(s.body.x, s.body.y - 20);
       }
 
       function playNext(scene: Phaser.Scene) {
         if (busy || cancelled) return;
-        // Skip events the map doesn't draw (Coordinator announcements: shown as toasts in E3).
+        // Announcements become toasts at this point in playback; anything else not drawable is skipped.
         let next = queue.current.shift();
-        while (next && !(next.twin && sprites.has(next.twin) && isPlace(next.place))) next = queue.current.shift();
+        while (next && !(next.twin && sprites.has(next.twin) && isPlace(next.place))) {
+          if (next.announcement) onAnnouncementRef.current?.(next);
+          next = queue.current.shift();
+        }
         if (!next || !next.twin || !isPlace(next.place)) return;
         const s = sprites.get(next.twin)!;
         busy = true;
         s.emoji.setText(next.emoji);
+        if (next.say) {
+          s.bubble.setText(next.say).setVisible(true);
+          scene.time.delayedCall(BUBBLE_MS, () => s.bubble.text === next!.say && s.bubble.setVisible(false));
+        }
         const target = spotFor(next.place, s.slot);
         finder.findPath(s.at.col, s.at.row, target.col, target.row, (path: { x: number; y: number }[] | null) => {
           if (cancelled) return;

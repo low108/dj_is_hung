@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 // Phaser touches `window`, so the map only loads in the browser.
 const GardenMap = dynamic(() => import("./garden/GardenMap"), { ssr: false });
+import TwinPanel, { type TwinState } from "./garden/TwinPanel";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
 
@@ -36,7 +37,10 @@ type FeedEvent = {
   emoji: string;
   say: string;
   line: string;
+  announcement: string | null;
 };
+
+const TOAST_MS = 4000;
 
 type Simulation = {
   id: string;
@@ -100,19 +104,34 @@ export default function Home() {
   const [featuredRun, setFeaturedRun] = useState<string | null>(null);
   const [twinNames, setTwinNames] = useState<string[]>([]);
   const [simId, setSimId] = useState<string | null>(null);
+  const [twinStates, setTwinStates] = useState<Record<string, TwinState>>({});
+  const [selected, setSelected] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<{ seq: number; text: string }[]>([]);
+
+  function toast(event: { seq: number; announcement: string | null }) {
+    if (!event.announcement) return;
+    const item = { seq: event.seq, text: event.announcement };
+    setToasts((old) => [...old, item].slice(-3));
+    setTimeout(() => setToasts((old) => old.filter((t) => t.seq !== item.seq)), TOAST_MS);
+  }
 
   async function follow(id: string) {
     // Poll the featured run's events and the simulation until it's done (Firestore listeners later).
     let after = -1;
     for (;;) {
-      const [eventsRes, simRes] = await Promise.all([
+      const [eventsRes, simRes, twinsRes] = await Promise.all([
         fetch(`${API_URL}/simulations/${id}/events?after=${after}`),
         fetch(`${API_URL}/simulations/${id}`),
+        fetch(`${API_URL}/simulations/${id}/twins`),
       ]);
       const fresh: FeedEvent[] = eventsRes.ok ? await eventsRes.json() : [];
       if (fresh.length) {
         after = fresh[fresh.length - 1].seq;
         setFeedEvents((old) => [...old, ...fresh]);
+      }
+      if (twinsRes.ok) {
+        const states: TwinState[] = await twinsRes.json();
+        setTwinStates(Object.fromEntries(states.map((t) => [t.twin, t])));
       }
       if (!simRes.ok) throw new Error(`API returned ${simRes.status} while following the simulation`);
       const current: Simulation = await simRes.json();
@@ -133,6 +152,9 @@ export default function Home() {
     setFeaturedRun(null);
     setTwinNames([]);
     setSimId(null);
+    setTwinStates({});
+    setSelected(null);
+    setToasts([]);
     try {
       const res = await fetch(`${API_URL}/simulations`, {
         method: "POST",
@@ -206,7 +228,24 @@ export default function Home() {
 
       {twinNames.length > 0 && (
         <section className="result map">
-          <GardenMap key={simId ?? "none"} events={feedEvents} twins={twinNames} />
+          <div className="map-wrap">
+            <GardenMap
+              key={simId ?? "none"}
+              events={feedEvents}
+              twins={twinNames}
+              onSelect={setSelected}
+              onAnnouncement={toast}
+            />
+            <div className="toasts" aria-live="polite">
+              {toasts.map((t) => (
+                <div key={t.seq} className="toast">
+                  📣 {t.text}
+                </div>
+              ))}
+            </div>
+          </div>
+          <TwinPanel state={selected ? twinStates[selected] : undefined} onClose={() => setSelected(null)} />
+          {!selected && <p className="meta">Click a twin to see how they&apos;re doing.</p>}
         </section>
       )}
 

@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from itertools import product
 
-from .engine import FeedHook, Model, RunResult, WorldConfig, run_world
+from .engine import FeedHook, Model, RunResult, StateHook, WorldConfig, run_world
 from .engine_types import Twin
 
 
@@ -67,22 +67,31 @@ def featured_spec(specs: list[RunSpec]) -> RunSpec | None:
     return next((s for s in specs if s.price is PriceLevel.HIGH), specs[0] if specs else None)
 
 
+@dataclass(frozen=True)
+class Observer:
+    """What the viewer listens to on the featured run."""
+
+    on_feed: FeedHook | None = None
+    on_state: StateHook | None = None
+
+
 def run_one(spec: RunSpec, twins: tuple[Twin, ...], make_model: Callable[[RunSpec], Model],
-            on_feed: FeedHook | None = None, **config) -> RunRecord:
+            observer: Observer | None = None, **config) -> RunRecord:
     """One run; extra keyword arguments go to WorldConfig (e.g. max_days, thresholds)."""
     start = time.perf_counter()
     try:
         world = WorldConfig(twins, seed=spec.seed, standing_start=spec.price.standing, **config)
-        result = run_world(world, make_model(spec), on_feed)  # a fresh model per run: twins carry memories
+        observer = observer or Observer()
+        result = run_world(world, make_model(spec), observer.on_feed, observer.on_state)  # fresh model per run
         return RunRecord(spec, result, time.perf_counter() - start)
     except Exception as e:  # one failed run must not sink the simulation
         return RunRecord(spec, None, time.perf_counter() - start, f"{type(e).__name__}: {e}")
 
 
 def run_simulation(specs: list[RunSpec], twins: tuple[Twin, ...], make_model: Callable[[RunSpec], Model],
-                   parallelism: int = 12, featured: Callable[[RunSpec], FeedHook] | None = None,
+                   parallelism: int = 12, featured: Callable[[RunSpec], Observer] | None = None,
                    **config) -> Simulation:
-    """`featured(spec)` gives the feed hook for the featured run (see featured_spec), which streams live."""
+    """`featured(spec)` gives the Observer for the featured run (see featured_spec), which streams live."""
     start = time.perf_counter()
     first = featured_spec(specs)
 

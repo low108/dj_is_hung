@@ -11,12 +11,15 @@ class SimulationStore(Protocol):
     def get(self, sim_id: str) -> dict | None: ...
     def add_events(self, sim_id: str, events: list[dict]) -> None: ...
     def events(self, sim_id: str, after: int = -1) -> list[dict]: ...
+    def save_twin_states(self, sim_id: str, states: list[dict]) -> None: ...
+    def twin_states(self, sim_id: str) -> list[dict]: ...
 
 
 class MemoryStore:
     def __init__(self):
         self._records: dict[str, dict] = {}
         self._events: dict[str, list[dict]] = {}
+        self._twins: dict[str, dict[str, dict]] = {}
         self._lock = threading.Lock()  # the simulation thread writes while requests read
 
     def save(self, sim_id: str, record: dict) -> None:
@@ -35,6 +38,14 @@ class MemoryStore:
     def events(self, sim_id: str, after: int = -1) -> list[dict]:
         with self._lock:
             return [e for e in self._events.get(sim_id, []) if e["seq"] > after]
+
+    def save_twin_states(self, sim_id: str, states: list[dict]) -> None:
+        with self._lock:
+            self._twins.setdefault(sim_id, {}).update({s["twin"]: s for s in states})
+
+    def twin_states(self, sim_id: str) -> list[dict]:
+        with self._lock:
+            return list(self._twins.get(sim_id, {}).values())
 
 
 class FirestoreStore:
@@ -63,6 +74,16 @@ class FirestoreStore:
 
         sub = self._col.document(sim_id).collection("events")
         return [d.to_dict() for d in sub.where(filter=FieldFilter("seq", ">", after)).order_by("seq").stream()]
+
+    def save_twin_states(self, sim_id: str, states: list[dict]) -> None:
+        batch = self._db.batch()
+        sub = self._col.document(sim_id).collection("twins")
+        for state in states:  # one document per twin, overwritten each evening
+            batch.set(sub.document(state["twin"]), state)
+        batch.commit()
+
+    def twin_states(self, sim_id: str) -> list[dict]:
+        return [d.to_dict() for d in self._col.document(sim_id).collection("twins").stream()]
 
 
 def default_store() -> SimulationStore:
