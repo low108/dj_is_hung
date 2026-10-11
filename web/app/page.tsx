@@ -413,6 +413,7 @@ export default function Home() {
             <option value="fake">Scripted (instant)</option>
             <option value="ilmu:ilmu-mini-v3.3">ILMU (real, a few minutes)</option>
             <option value="gemini:gemini-3.5-flash">Gemini Flash (real)</option>
+            <option value="gemma:gemma-4-26b-a4b-it">Gemma 4 (real)</option>
           </select>
         </label>
         <label>

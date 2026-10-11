@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import os
 import threading
@@ -14,7 +15,7 @@ from concordia.language_model import language_model
 
 FLASH = "gemini-3.5-flash"  # 3.8-flash returned 503 (overloaded) on 2026-10-10
 PRO = "gemini-3.1-pro-preview"
-GEMMA = "gemma-4-31b-it"
+GEMMA = "gemma-4-26b-a4b-it"  # MoE, 4B active: ~1-2s per call in JSON mode; the 31B dense model takes ~35s
 
 
 @dataclass
@@ -129,6 +130,9 @@ class CountingModel(language_model.LanguageModel):
     def sample_choice(self, prompt: str, responses: Sequence[str], *, seed: int | None = None):
         with self._lock:
             self.stats.choice_calls += 1
+        if self._letter_choices and hasattr(self._inner, "choose_letter"):  # guided decoding: always valid
+            letter = self._counted(prompt, lambda: self._inner.choose_letter(prompt + CHOICE_HINT, responses))
+            return responses.index(letter), letter, {"attempts": 1, "constrained": True}
         if self._letter_choices:
             return language_model_choice(self, prompt, responses, seed=seed)
         return self._inner.sample_choice(prompt, responses, seed=seed)
@@ -205,6 +209,47 @@ class GenAIModel(language_model.LanguageModel):
         raise NotImplementedError("wrap in CountingModel, which answers choices by letter")
 
 
+class GemmaModel(GenAIModel):
+    """Gemma 4 on the Gemini API. It always thinks before free text (20-40s a call, and thinking can't be
+    turned off), but answers JSON-mode requests directly in 1-2s. So speech and reflections come back as
+    {"text": ...}, and ladder choices are constrained to an enum of the option letters: guided decoding,
+    so Gemma can't return an invalid action."""
+
+    TEXT_SCHEMA = {"type": "OBJECT", "properties": {"text": {"type": "STRING"}}, "required": ["text"]}
+
+    def _json(self, prompt: str, schema: dict, temperature: float, max_tokens: int) -> dict:
+        from google.genai import types
+
+        config = types.GenerateContentConfig(response_mime_type="application/json", response_schema=schema,
+                                             temperature=temperature, max_output_tokens=max_tokens)
+        response = self._client.models.generate_content(model=self._name, contents=prompt, config=config)
+        try:
+            data = json.loads(response.text or "{}")
+        except json.JSONDecodeError:  # cut off at max_tokens: an empty reply, which callers retry
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def sample_text(self, prompt: str, *, max_tokens: int = language_model.DEFAULT_MAX_TOKENS,
+                    terminators: Collection[str] = (), temperature: float = TEXT_TEMPERATURE, **kwargs) -> str:
+        text = str(self._json(prompt, self.TEXT_SCHEMA, temperature, max(max_tokens + 32, 96)).get("text", ""))
+        for stop in terminators:  # JSON mode has no stop sequences; cut where one would have stopped
+            if stop and stop in text:
+                text = text.split(stop, 1)[0]
+        return text.strip()
+
+    def sample_json(self, prompt: str, schema: type) -> str:
+        return GenAIModel.sample_json(self, prompt, schema)
+
+    def choose_letter(self, prompt: str, letters: Sequence[str]) -> str:
+        schema = {"type": "OBJECT", "properties": {"choice": {"type": "STRING", "enum": list(letters)}},
+                  "required": ["choice"]}
+        for attempt in range(3):
+            letter = self._json(prompt, schema, CHOICE_TEMPERATURE + CHOICE_RETRY_STEP * attempt, 64).get("choice")
+            if letter in letters:
+                return letter
+        raise language_model.InvalidResponseError(f"no valid choice from {self._name}")
+
+
 def _answer_only(text: str) -> str:
     """Some reasoning models put their thinking in <think> tags; keep only the answer."""
     return (text.split("</think>", 1)[1] if "</think>" in text else text).strip()
@@ -262,6 +307,10 @@ def make_model(spec: str | None = None, attempts: int = 6) -> CountingModel:
     Defaults to the TWIN_MODEL environment variable, then Gemini Flash. A bare model name means Gemini."""
     spec = spec or os.environ.get("TWIN_MODEL") or f"gemini:{FLASH}"
     provider, _, name = spec.partition(":") if ":" in spec else ("gemini", "", spec)
+    if provider == "gemma" or (provider == "gemini" and name.startswith("gemma")):
+        rpm = int(os.environ.get("GEMMA_RPM", "0")) or None
+        model = name or GEMMA
+        return CountingModel(GemmaModel(model), pacer=shared_pacer(("gemma", model), rpm), attempts=attempts)
     if provider == "gemini":
         return gemini(name or FLASH, attempts=attempts)
     if provider == "ilmu":
