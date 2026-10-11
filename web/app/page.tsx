@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { Progress } from "./garden/GardenMap";
 import Timeline, { isWallCrossing } from "./garden/Timeline";
@@ -359,6 +360,9 @@ export default function Home() {
     <main className="page">
       <h1>The Garden</h1>
       <p className="lede">Twins live in the Garden. The men her twin will give up the most for come first.</p>
+      <p className="meta">
+        <Link href="/onboarding">Build your own twin →</Link>
+      </p>
 
       <div className="controls">
         <label>

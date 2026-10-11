@@ -22,8 +22,8 @@ make install
 Then, each in its own terminal:
 
 ```bash
-make emulator   # Firestore emulator on :8080, UI on :4000
-make api        # API on :8001
+make emulator   # Firestore on :8080, Auth on :9099, UI on :4000
+make api        # API on :8001 (reads .env for model keys)
 make web        # web app on :3000
 ```
 
@@ -83,3 +83,5 @@ The free tier allows about 5 requests per minute and 20 per day per model, which
 ## Simulation viewer
 
 `web/app/garden/` draws the Garden with Phaser 3 (shapes in code, no third-party tileset or sprites, so there is no art licence to track) and walks twins between places with EasyStar.js pathfinding. It plays the featured run's feed events in order, live or after the fact. Libraries: Phaser 3.90.0 (MIT), EasyStar.js 0.4.4 (MIT).
+
+**Build your own twin** (`/onboarding`): sign in (locally the Auth emulator offers fake accounts), consent, then answer 15 questions one per screen; a short answer gets one follow-up from Gemini Flash (a template follow-up when no `GEMINI_API_KEY` is set). Progress is saved, so you can leave and resume.

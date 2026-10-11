@@ -1,18 +1,23 @@
 """Where simulation records live: Firestore (emulator or cloud) or memory for tests."""
 from __future__ import annotations
 
+import copy
 import os
 import threading
 from typing import Protocol
 
 
 class SimulationStore(Protocol):
+    """Simulations, their events and twin snapshots, and users' onboarding (D3)."""
+
     def save(self, sim_id: str, record: dict) -> None: ...
     def get(self, sim_id: str) -> dict | None: ...
     def add_events(self, sim_id: str, events: list[dict]) -> None: ...
     def events(self, sim_id: str, after: int = -1) -> list[dict]: ...
     def save_twin_states(self, sim_id: str, states: list[dict]) -> None: ...
     def twin_states(self, sim_id: str) -> list[dict]: ...
+    def get_user(self, uid: str) -> dict | None: ...
+    def save_user(self, uid: str, doc: dict) -> None: ...
 
 
 class MemoryStore:
@@ -20,6 +25,7 @@ class MemoryStore:
         self._records: dict[str, dict] = {}
         self._events: dict[str, list[dict]] = {}
         self._twins: dict[str, list[dict]] = {}
+        self._users: dict[str, dict] = {}
         self._lock = threading.Lock()  # the simulation thread writes while requests read
 
     def save(self, sim_id: str, record: dict) -> None:
@@ -47,6 +53,15 @@ class MemoryStore:
         with self._lock:
             return list(self._twins.get(sim_id, []))
 
+    def get_user(self, uid: str) -> dict | None:
+        with self._lock:
+            doc = self._users.get(uid)
+            return copy.deepcopy(doc) if doc is not None else None
+
+    def save_user(self, uid: str, doc: dict) -> None:
+        with self._lock:
+            self._users[uid] = copy.deepcopy(doc)
+
 
 class FirestoreStore:
     def __init__(self, project: str):
@@ -54,6 +69,7 @@ class FirestoreStore:
 
         self._db = firestore.Client(project=project)
         self._col = self._db.collection("simulations")
+        self._users = self._db.collection("users")
 
     def save(self, sim_id: str, record: dict) -> None:
         self._col.document(sim_id).set(record)
@@ -84,6 +100,13 @@ class FirestoreStore:
 
     def twin_states(self, sim_id: str) -> list[dict]:
         return [d.to_dict() for d in self._col.document(sim_id).collection("twins").stream()]
+
+    def get_user(self, uid: str) -> dict | None:
+        snap = self._users.document(uid).get()
+        return snap.to_dict() if snap.exists else None
+
+    def save_user(self, uid: str, doc: dict) -> None:
+        self._users.document(uid).set(doc)
 
 
 def default_store() -> SimulationStore:
