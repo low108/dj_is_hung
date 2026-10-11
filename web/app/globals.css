@@ -331,3 +331,21 @@ button.link {
 .highlight-card li {
   margin: 3px 0;
 }
+
+.onboarding textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  padding: 8px;
+  margin: 8px 0;
+}
+.onboarding progress {
+  width: 100%;
+}
+.onboarding .followup {
+  font-style: italic;
+}
+.onboarding .check {
+  display: block;
+  margin: 8px 0;
+}

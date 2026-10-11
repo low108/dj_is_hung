@@ -47,3 +47,14 @@ def make_highlight_model(models: list[str]):
 
     default = f"gemini:{FLASH}" if os.environ.get("GEMINI_API_KEY") else next(m for m in models if not is_fake(m))
     return make_model(os.environ.get("HIGHLIGHT_MODEL") or default)
+
+
+def make_followup_model():
+    """Asks onboarding follow-ups (D3): Gemini Flash when GEMINI_API_KEY is set (FOLLOWUP_MODEL overrides),
+    else None and the theme's template follow-up is used."""
+    spec = os.environ.get("FOLLOWUP_MODEL")
+    if not spec and not os.environ.get("GEMINI_API_KEY"):
+        return None
+    from .llm import FLASH, make_model
+
+    return make_model(spec or f"gemini:{FLASH}")
