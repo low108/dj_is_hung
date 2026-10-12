@@ -100,10 +100,6 @@ class CountingModel(language_model.LanguageModel):
         self.stats = CallStats()
         self._lock = threading.Lock()
 
-    @property
-    def choice_tokens(self) -> int:
-        return getattr(self._inner, "choice_tokens", CHOICE_TOKENS)
-
     def _pace(self) -> None:
         if self._pacer:
             self._pacer.wait()
@@ -179,8 +175,6 @@ CHOICE_RETRY_STEP = 0.1   # added per retry when a reply has no valid letter
 TEXT_TEMPERATURE = 1.0    # speech and reflections
 CHOICE_HINT = "\n(Reply with only the letter of the chosen option.)\nAnswer: ("
 CHOICE_ATTEMPTS = 3
-CHOICE_TOKENS = 8              # a letter is all a choice needs
-REASONING_CHOICE_TOKENS = 1024  # reasoning models think before the letter (GLM used 120-370 tokens, sometimes more)
 JSON_OVERHEAD_TOKENS = 64  # room for the {"text": ...} wrapper and escaping in JSON-mode replies
 
 
@@ -190,7 +184,7 @@ def language_model_choice(model: CountingModel, prompt: str, responses: Sequence
     hinted = prompt + CHOICE_HINT
     sample = ""
     for attempt in range(5):
-        sample = model.sample_text(hinted, max_tokens=model.choice_tokens, temperature=CHOICE_TEMPERATURE + CHOICE_RETRY_STEP * attempt)
+        sample = model.sample_text(hinted, max_tokens=8, temperature=CHOICE_TEMPERATURE + CHOICE_RETRY_STEP * attempt)
         letter = parse_choice_letter(sample, responses)
         if letter:
             return responses.index(letter), letter, {"attempts": attempt + 1}
@@ -307,9 +301,6 @@ class OpenAICompatModel(language_model.LanguageModel):
         # A request ILMU never answered once held a run for over half an hour: give up when nothing arrives
         # for CALL_TIMEOUT and let CountingModel ask again.
         self._client = OpenAI(base_url=base_url, api_key=api_key, timeout=CALL_TIMEOUT, max_retries=0)
-        # GLM reasons before answering and the reasoning can't be turned off: with 8 tokens a choice comes
-        # back empty (all of it spent thinking), so reasoning models get room to finish.
-        self.choice_tokens = REASONING_CHOICE_TOKENS if "glm" in model_name.lower() else CHOICE_TOKENS
 
     def sample_text(self, prompt: str, *, max_tokens: int = language_model.DEFAULT_MAX_TOKENS,
                     terminators: Collection[str] = (), temperature: float = TEXT_TEMPERATURE, **kwargs) -> str:
