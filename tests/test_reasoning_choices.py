@@ -56,7 +56,9 @@ def test_a_request_that_times_out_is_asked_again():
         reply = replies.pop(0)
         if isinstance(reply, Exception):
             raise reply
-        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=reply))])
+        assert request["stream"]
+        return iter([SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=part))])
+                     for part in ("Hel", None, "lo.")])
 
     inner = OpenAICompatModel("ilmu-glm-5.3-flash", "http://x", "k")
     inner._client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))

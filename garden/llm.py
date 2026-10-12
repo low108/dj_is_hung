@@ -304,8 +304,8 @@ class OpenAICompatModel(language_model.LanguageModel):
         from openai import OpenAI
 
         self._name = model_name
-        # A request ILMU never answers once held a run for over half an hour: give up on it after
-        # CALL_TIMEOUT and let CountingModel ask again.
+        # A request ILMU never answered once held a run for over half an hour: give up when nothing arrives
+        # for CALL_TIMEOUT and let CountingModel ask again.
         self._client = OpenAI(base_url=base_url, api_key=api_key, timeout=CALL_TIMEOUT, max_retries=0)
         # GLM reasons before answering and the reasoning can't be turned off: with 8 tokens a choice comes
         # back empty (all of it spent thinking), so reasoning models get room to finish.
@@ -313,35 +313,39 @@ class OpenAICompatModel(language_model.LanguageModel):
 
     def sample_text(self, prompt: str, *, max_tokens: int = language_model.DEFAULT_MAX_TOKENS,
                     terminators: Collection[str] = (), temperature: float = TEXT_TEMPERATURE, **kwargs) -> str:
-        response = self._create(
+        return _answer_only(self._create(
             model=self._name,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=max(max_tokens, 64),
             temperature=temperature,
             stop=list(terminators)[:4] or None,
-        )
-        return _answer_only(response.choices[0].message.content or "")
+        ))
 
     def sample_json(self, prompt: str, schema: type) -> str:
         """JSON mode plus the schema in the prompt (no schema enforcement here; the caller validates)."""
         import json
 
         spec = json.dumps(schema.model_json_schema())
-        response = self._create(
+        return _answer_only(self._create(
             model=self._name,
             messages=[{"role": "user", "content": f"{prompt}\n\nAnswer with JSON matching this schema:\n{spec}"}],
             response_format={"type": "json_object"},
             max_tokens=8192,
             temperature=TEXT_TEMPERATURE,
-        )
-        return _answer_only(response.choices[0].message.content or "")
+        ))
 
-    def _create(self, **request):
-        """One completion; a timeout or dropped connection is retryable, like an overload."""
+    def _create(self, **request) -> str:
+        """One completion's answer text, streamed: ILMU cuts off a request that takes too long to answer
+        (503 'use streaming for long requests'), and GLM can reason for a minute before its first word.
+        A timeout or dropped connection is retryable, like an overload."""
         from openai import APIConnectionError  # (APITimeoutError is one)
 
         try:
-            return self._client.chat.completions.create(**request)
+            parts = []
+            for chunk in self._client.chat.completions.create(**request, stream=True):
+                if chunk.choices and chunk.choices[0].delta.content:
+                    parts.append(chunk.choices[0].delta.content)
+            return "".join(parts)
         except APIConnectionError as e:
             raise RetryableReply(f"{type(e).__name__}: {e}") from e
 
@@ -350,7 +354,7 @@ class OpenAICompatModel(language_model.LanguageModel):
 
 
 ILMU_BASE_URL = "https://api.ilmu.ai/v1"
-CALL_TIMEOUT = 180  # seconds; a GLM reflection with long reasoning takes about a minute
+CALL_TIMEOUT = 180  # seconds of silence on a stream before giving up on it
 ILMU_MINI = "ilmu-mini-v3.3"
 
 
