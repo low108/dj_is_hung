@@ -18,7 +18,7 @@ from .invitations import Invitations
 from .longing import Longing
 
 
-MAX_TURNS = 20  # turns per twin per day: a conversation ends sooner when both have stopped
+MAX_TURNS = 10  # turns per twin per day: a conversation ends sooner when both have stopped
 
 
 @dataclass(frozen=True)

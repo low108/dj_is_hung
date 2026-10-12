@@ -80,7 +80,7 @@ def test_a_conversation_goes_on_until_both_stop():
     assert [rung for _, rung in day_one[-2:]] == [Rung.REFLECT, Rung.REFLECT]  # then both stop
 
 
-def test_a_twin_has_at_most_twenty_turns_a_day():
+def test_a_twin_has_at_most_max_turns_a_day():
     class Chatty(ScriptedModel):
         def choose_action(self, twin, day, others, situation=None):
             self.turn_of(twin, day)
