@@ -254,11 +254,9 @@ class ConcordiaTwins:
                 agent.observe(OBSERVE_INVITED.format(day=day, inviter=inviter))
 
         options = options_for(situation)  # the wall lock only changes what is offered
-        choice = agent.act(entity_lib.ActionSpec(
-            call_to_action=ask_action(situation, day),
-            output_type=entity_lib.OutputType.CHOICE,
-            options=tuple(options),
-        ))
+        choice = self._choose(agent, twin.alias, day, ask_action(situation, day), tuple(options))
+        if choice is None:
+            return Action(Rung.REFLECT)
         rung = options[choice]
 
         candidates = names  # the engine passes only who this twin can act toward right now
@@ -269,11 +267,10 @@ class ConcordiaTwins:
         if rung.value in NEEDS_TARGET and candidates:
             question = (ASK_LEAVE_TARGET.format() if leaving  # (unescapes {{name}} for Concordia)
                         else ASK_TARGET.format(action=RUNG_OPTIONS[rung.value].lower()))
-            target = candidates[0] if len(candidates) == 1 else agent.act(entity_lib.ActionSpec(
-                call_to_action=question,
-                output_type=entity_lib.OutputType.CHOICE,
-                options=tuple(candidates),
-            ))
+            target = candidates[0] if len(candidates) == 1 else self._choose(agent, twin.alias, day, question,
+                                                                             tuple(candidates))
+            if target is None:
+                return Action(Rung.REFLECT)
 
         say = ""
         if rung.value in SPEAKS and target:
@@ -283,6 +280,17 @@ class ConcordiaTwins:
             # science experiment...' must not hide what the model said around it.
             say = self._speak(agent, spec, twin.alias, day)
         return Action(rung, target, say)
+
+    def _choose(self, agent, alias: str, day: int, question: str, options: tuple[str, ...]) -> str | None:
+        """One multiple-choice answer, or None when the model gave no valid letter after its retries (a
+        reasoning model can spend its whole budget thinking). The twin then keeps to itself this turn,
+        logged as a redo, rather than the run ending."""
+        try:
+            return agent.act(entity_lib.ActionSpec(call_to_action=question, output_type=entity_lib.OutputType.CHOICE,
+                                                   options=options))
+        except language_model.InvalidResponseError as e:
+            self.redos.append(Breach(day, alias, "no choice", str(e)))
+            return None
 
     def _speak(self, agent, spec, alias: str, day: int) -> str:
         """One line of speech. Re-asked (up to RESAMPLES times) when it breaks immersion, comes out empty,
