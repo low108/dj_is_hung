@@ -43,3 +43,22 @@ def test_an_empty_choice_leaves_the_twin_to_itself_and_the_run_goes_on():
     assert result.outcome is OutcomeKind.TIMEOUT
     assert result.redos and {r.phrase for r in result.redos} == {"no choice"}
     assert any(e.rung is Rung.REFLECT for e in result.events)  # (a date still opens with both speaking)
+
+
+def test_a_request_that_times_out_is_asked_again():
+    import httpx
+    from openai import APITimeoutError
+    from types import SimpleNamespace
+
+    replies = [APITimeoutError(httpx.Request("POST", "http://x")), "Hello."]
+
+    def create(**request):
+        reply = replies.pop(0)
+        if isinstance(reply, Exception):
+            raise reply
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=reply))])
+
+    inner = OpenAICompatModel("ilmu-glm-5.3-flash", "http://x", "k")
+    inner._client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    counted = CountingModel(inner)
+    assert counted.sample_text("Hi") == "Hello." and counted.stats.retries == 1

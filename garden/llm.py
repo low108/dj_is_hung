@@ -304,14 +304,16 @@ class OpenAICompatModel(language_model.LanguageModel):
         from openai import OpenAI
 
         self._name = model_name
-        self._client = OpenAI(base_url=base_url, api_key=api_key)
+        # A request ILMU never answers once held a run for over half an hour: give up on it after
+        # CALL_TIMEOUT and let CountingModel ask again.
+        self._client = OpenAI(base_url=base_url, api_key=api_key, timeout=CALL_TIMEOUT, max_retries=0)
         # GLM reasons before answering and the reasoning can't be turned off: with 8 tokens a choice comes
         # back empty (all of it spent thinking), so reasoning models get room to finish.
         self.choice_tokens = REASONING_CHOICE_TOKENS if "glm" in model_name.lower() else CHOICE_TOKENS
 
     def sample_text(self, prompt: str, *, max_tokens: int = language_model.DEFAULT_MAX_TOKENS,
                     terminators: Collection[str] = (), temperature: float = TEXT_TEMPERATURE, **kwargs) -> str:
-        response = self._client.chat.completions.create(
+        response = self._create(
             model=self._name,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=max(max_tokens, 64),
@@ -325,7 +327,7 @@ class OpenAICompatModel(language_model.LanguageModel):
         import json
 
         spec = json.dumps(schema.model_json_schema())
-        response = self._client.chat.completions.create(
+        response = self._create(
             model=self._name,
             messages=[{"role": "user", "content": f"{prompt}\n\nAnswer with JSON matching this schema:\n{spec}"}],
             response_format={"type": "json_object"},
@@ -334,11 +336,21 @@ class OpenAICompatModel(language_model.LanguageModel):
         )
         return _answer_only(response.choices[0].message.content or "")
 
+    def _create(self, **request):
+        """One completion; a timeout or dropped connection is retryable, like an overload."""
+        from openai import APIConnectionError  # (APITimeoutError is one)
+
+        try:
+            return self._client.chat.completions.create(**request)
+        except APIConnectionError as e:
+            raise RetryableReply(f"{type(e).__name__}: {e}") from e
+
     def sample_choice(self, prompt: str, responses: Sequence[str], *, seed: int | None = None):
         raise NotImplementedError("wrap in CountingModel, which answers choices by letter")
 
 
 ILMU_BASE_URL = "https://api.ilmu.ai/v1"
+CALL_TIMEOUT = 180  # seconds; a GLM reflection with long reasoning takes about a minute
 ILMU_MINI = "ilmu-mini-v3.3"
 
 
