@@ -99,6 +99,7 @@ class CountingModel(language_model.LanguageModel):
         self._attempts = attempts  # retries for overloads and rate limits (fewer when a user is waiting)
         self.stats = CallStats()
         self._lock = threading.Lock()
+        self.chooser: CountingModel | None = None  # answers choices instead, when set (see choose_with)
 
     def _pace(self) -> None:
         if self._pacer:
@@ -140,6 +141,8 @@ class CountingModel(language_model.LanguageModel):
         return out
 
     def sample_choice(self, prompt: str, responses: Sequence[str], *, seed: int | None = None):
+        if self.chooser:  # (counts it in the shared stats)
+            return self.chooser.sample_choice(prompt, responses, seed=seed)
         with self._lock:
             self.stats.choice_calls += 1
         if self._letter_choices and isinstance(self._inner, GuidedChoices):  # guided decoding: always valid
@@ -155,6 +158,13 @@ class CountingModel(language_model.LanguageModel):
         if self._letter_choices:
             return language_model_choice(self, prompt, responses, seed=seed)
         return self._inner.sample_choice(prompt, responses, seed=seed)
+
+    def choose_with(self, chooser: CountingModel) -> CountingModel:
+        """Answer multiple-choice prompts with `chooser` (counted in these stats) and keep this model for
+        speech and reflections: a quick model picks actions, a stronger one writes."""
+        chooser.stats, chooser._lock = self.stats, self._lock
+        self.chooser = chooser
+        return self
 
 
 def parse_choice_letter(sample: str, letters: Sequence[str]) -> str | None:
@@ -360,9 +370,13 @@ def gemini(model_name: str = FLASH, requests_per_minute: int | None = None, atte
 
 
 def make_model(spec: str | None = None, attempts: int = 6) -> CountingModel:
-    """Build a twin model from 'provider:model', e.g. 'gemini:gemini-3.5-flash' or 'ilmu:ilmu-mini-v3.3'.
+    """Build a twin model from 'provider:model', e.g. 'gemini:gemini-3.5-flash' or 'ilmu:ilmu-mini-v3.3', or
+    from 'text model|choice model' to split the work (GLM reasons too long to pick an action quickly).
     Defaults to the TWIN_MODEL environment variable, then Gemini Flash. A bare model name means Gemini."""
     spec = spec or os.environ.get("TWIN_MODEL") or f"gemini:{FLASH}"
+    if "|" in spec:  # 'text model|choice model', e.g. 'ilmu:ilmu-glm-5.3-flash|ilmu:ilmu-mini-v3.3'
+        text, _, choice = spec.partition("|")
+        return make_model(text, attempts).choose_with(make_model(choice, attempts))
     provider, _, name = spec.partition(":") if ":" in spec else ("gemini", "", spec)
     if provider == "gemma" or (provider == "gemini" and name.startswith("gemma")):
         return _paced(GemmaModel(name or GEMMA), "gemma", name or GEMMA, attempts)

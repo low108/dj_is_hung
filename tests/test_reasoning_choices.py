@@ -48,3 +48,19 @@ def test_a_request_that_times_out_is_asked_again():
     inner._client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
     counted = CountingModel(inner)
     assert counted.sample_text("Hi") == "Hello." and counted.stats.retries == 1
+
+
+def test_a_split_model_writes_with_one_model_and_chooses_with_another():
+    writer, chooser = Thinker(""), Thinker("b")  # the writer never manages a letter
+    model = CountingModel(writer).choose_with(CountingModel(chooser))
+    assert model.sample_choice("Pick", ["a", "b"])[1] == "b"
+    assert model.sample_text("Say something.") == CLEAN
+    assert model.stats.choice_calls == 1 and model.stats.text_calls == 2  # one shared count
+
+
+def test_a_split_spec_builds_both_models(monkeypatch):
+    monkeypatch.setenv("ILMU_API_KEY", "k")
+    from garden.llm import make_model
+
+    model = make_model("ilmu:ilmu-glm-5.3-flash|ilmu:ilmu-mini-v3.3")
+    assert model._inner._name == "ilmu-glm-5.3-flash" and model.chooser._inner._name == "ilmu-mini-v3.3"
