@@ -14,7 +14,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from garden import agreement, demo, highlights, llm, replay
+from garden import agreement, couples, demo, highlights, llm, replay
 from garden import twin_builder as tb
 from garden import pools as pool_lib
 from garden import speed_dating as sd
@@ -41,6 +41,7 @@ class StartSimulation(BaseModel):
     seeds: list[int] = [0, 1]
     max_days: int | None = None  # a safety cap; a run ends when every man has had his dates (or a breakout)
     pool_iid: int | None = None  # a real speed-dating woman (see GET /pools); None = placeholder demo pool
+    couple_id: int | None = None  # a real couple (garden/couples.py): her twin, her partner's, 6 men from other couples
     my_twin: bool = False  # the signed-in user's own twin as the woman, with the demo pool's men (D4)
     background: bool = False  # True: return at once and stream the featured run's events (the web app)
 
@@ -134,8 +135,14 @@ def create_app(store: Store | None = None, log_runs: bool = False,
         sim_id = uuid.uuid4().hex[:12]
         models = list(llm.ENSEMBLE) if req.models == [demo.ENSEMBLE_ALIAS] else req.models
         specs = plan(models, req.seeds)
+        couple = None
         if req.my_twin:
             pool = demo.with_her_twin(*tb.garden_inputs(twin.reviewed_twin(request, current_user(request))))
+        elif req.couple_id is not None:
+            try:
+                pool, couple = couples.setup(req.couple_id)
+            except (KeyError, FileNotFoundError) as e:
+                raise HTTPException(404, str(e)) from e
         else:
             try:
                 pool = pool_lib.resolve(req.pool_iid, dates)
@@ -153,6 +160,9 @@ def create_app(store: Store | None = None, log_runs: bool = False,
         record["featured_run"] = featured.run_id if featured else None
         record["twins"] = [t.alias for t in twins]  # the viewer places sprites before any event arrives
         record["woman"] = woman  # whose days the viewer follows
+        if couple is not None:  # the couples answer key: her real partner, and how happy they are
+            record["couple"] = {"id": req.couple_id, "partner": couple.partner,
+                                "satisfaction": {"her": couple.satisfaction[0], "him": couple.satisfaction[1]}}
         app.state.store.save(sim_id, record)
         store = app.state.store
 
