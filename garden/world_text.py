@@ -66,7 +66,14 @@ ASK_TARGET = "Who does {{name}} choose to {action}?"
 ASK_LEAVE_TARGET = "Of everyone {{name}} has met, who does {{name}} love enough to leave the Garden with?"
 # Each twin's memory of the people it has met: what each one said to it, word for word, under their name.
 PEOPLE_LABEL = "\nWhat {name} remembers each person saying to {name}"
-ASK_SPEECH = "What does {{name}} say to {target}? One short line of dialogue only."
+# Leaving is decided before the line is written (a quick model may choose and another write), so the
+# line is told the decision: unprompted, a writer once had Lina go beyond the wall saying "I'm staying".
+ASK_SPEECH = ("{{name}} has made up {{name}}'s mind to {decision}, and is doing it now. What does {{name}} say to "
+              "{target} as {{name}} does it? The line must fit that decision. One short line of dialogue only.")
+LEAVING_DECISIONS = {
+    "propose_leaving": "ask {target} to leave the Garden together",
+    "go_beyond_wall": "go beyond the wall for {target}, leaving the Garden for good",
+}
 
 # Conversations (#62): a date or a gathering is a back-and-forth, so the question is about the next
 # move in it, not the whole day, and speech answers what was just said and shares something real.

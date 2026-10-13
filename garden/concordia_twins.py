@@ -15,7 +15,7 @@ from typing import TypeVar
 from . import immersion
 from .engine_types import LEAVING_RUNGS, SOCIAL_RUNGS, Action, Breach, Event, Reflection, Rung, Situation, Twin
 from .llm import hash_embedder
-from .world_text import (ASK_ACTION, ASK_AFTER_LINE, ASK_DATE, ASK_GATHERING, ASK_OPENER, ASK_REPLY, ASK_SPEECH,
+from .world_text import (LEAVING_DECISIONS, ASK_ACTION, ASK_AFTER_LINE, ASK_DATE, ASK_GATHERING, ASK_OPENER, ASK_REPLY, ASK_SPEECH,
                          ASK_LEAVE_TARGET, ASK_TARGET, DATE_OPTIONS, PEOPLE_LABEL, INSTRUCTIONS, NEEDS_TARGET, OBSERVE_DAY, OBSERVE_NOTE,
                          OBSERVE_INVITED, OBSERVE_I_SAID, OBSERVE_REFLECTION, OBSERVE_SAID, PERSONA_SECTION, RUNG_OPTIONS, SPEAKS,
                          BASE_MEMORIES, STANDING_MEMORIES)
@@ -111,7 +111,7 @@ def ask_speech(rung: Rung, target: str, situation: Situation | None) -> str:
     """Talk is a conversation: answer what was just said and share something real. Asking someone to
     leave, or heading for the wall, is its own short line."""
     if rung in LEAVING_RUNGS:
-        return ASK_SPEECH.format(target=target)
+        return ASK_SPEECH.format(target=target, decision=LEAVING_DECISIONS[rung.value].format(target=target))
     replying = bool(situation and situation.replying_to and situation.replying_to[0] == target)
     return (ASK_REPLY if replying else ASK_OPENER).format(target=target)
 

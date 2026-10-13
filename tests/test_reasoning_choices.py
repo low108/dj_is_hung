@@ -87,3 +87,11 @@ def test_a_reply_cut_off_partway_is_asked_again():
     inner._client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
     counted = CountingModel(inner)
     assert counted.sample_text("Hi") == "Hello." and counted.stats.retries == 1
+
+
+def test_a_leaving_line_is_told_the_decision_it_speaks_for():
+    from garden.concordia_twins import ask_speech
+
+    assert "ask Marco to leave the Garden together" in ask_speech(Rung.PROPOSE_LEAVING, "Marco", None)
+    wall = ask_speech(Rung.GO_BEYOND_WALL, "Marco", None)
+    assert "go beyond the wall for Marco" in wall and "must fit that decision" in wall
