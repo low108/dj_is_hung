@@ -120,11 +120,12 @@ class PoolSetup:
     matched: frozenset[str] | None  # the answer key; None for the demo pool
 
 
-def resolve(pool_iid: int | None, dates: Callable[[], pd.DataFrame] = sd.load) -> PoolSetup:
-    """The demo pool when `pool_iid` is None, otherwise that real woman's pool (KeyError if not a woman)."""
+def resolve(pool_iid: int | None, dates: Callable[[], pd.DataFrame] = sd.load, non_matches: int = 3) -> PoolSetup:
+    """The demo pool when `pool_iid` is None, otherwise that real woman's pool (KeyError if not a woman):
+    all her matches and `non_matches` men she didn't match with."""
     from . import demo
 
     if pool_iid is None:
         return PoolSetup(demo.POOL, demo.PERSONAS, demo.WOMAN, demo.MEN, None)
-    pool = load_pool(dates(), pool_iid)
+    pool = load_pool(dates(), pool_iid, non_matches=non_matches)
     return PoolSetup(pool.twins, pool.personas, pool.woman.alias, pool.men_aliases, pool.matched)

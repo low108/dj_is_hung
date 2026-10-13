@@ -90,3 +90,12 @@ def test_ties_count_as_half_so_no_information_scores_chance():
     tied = {n: (0, 0.0) for n in ranked}
     check = check_answer_key(ranked, frozenset({"A", "B"}), tied)
     assert check.pairs_in_order == 0.5 and not check.matches_on_top
+
+
+def test_a_pool_can_have_fewer_or_more_men_she_did_not_match():
+    app = create_app(MemoryStore())
+    app.state.dates = fake_dates()
+    client = TestClient(app)
+    body = client.post("/simulations", json={"pool_iid": 1, "pool_non_matches": 1, "max_days": 3, "seeds": [0]}).json()
+    assert len(body["ranking"]) == 3 and len(body["answer_key"]["matched"]) == 2  # her 2 matches + 1
+    assert client.post("/simulations", json={"pool_iid": 1, "pool_non_matches": 0}).status_code == 422

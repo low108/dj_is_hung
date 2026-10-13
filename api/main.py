@@ -12,7 +12,7 @@ from typing import Literal, Protocol
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from garden import agreement, couples, demo, highlights, llm, replay
 from garden import twin_builder as tb
@@ -41,6 +41,7 @@ class StartSimulation(BaseModel):
     seeds: list[int] = [0, 1]
     max_days: int | None = None  # a safety cap; a run ends when every man has had his dates (or a breakout)
     pool_iid: int | None = None  # a real speed-dating woman (see GET /pools); None = placeholder demo pool
+    pool_non_matches: int = Field(3, ge=1, le=10)  # men in her pool she didn't match with (chance = matches / men)
     couple_id: int | None = None  # a real couple (garden/couples.py): her twin, her partner's, 6 men from other couples
     my_twin: bool = False  # the signed-in user's own twin as the woman, with the demo pool's men (D4)
     background: bool = False  # True: return at once and stream the featured run's events (the web app)
@@ -145,7 +146,7 @@ def create_app(store: Store | None = None, log_runs: bool = False,
                 raise HTTPException(404, str(e)) from e
         else:
             try:
-                pool = pool_lib.resolve(req.pool_iid, dates)
+                pool = pool_lib.resolve(req.pool_iid, dates, req.pool_non_matches)
             except KeyError as e:
                 raise HTTPException(404, str(e)) from e
         twins, personas, woman, men = pool.twins, pool.personas, pool.woman, pool.men
