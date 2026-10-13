@@ -64,3 +64,26 @@ def test_a_split_spec_builds_both_models(monkeypatch):
 
     model = make_model("ilmu:ilmu-glm-5.3-flash|ilmu:ilmu-mini-v3.3")
     assert model._inner._name == "ilmu-glm-5.3-flash" and model.chooser._inner._name == "ilmu-mini-v3.3"
+
+
+def test_a_reply_cut_off_partway_is_asked_again():
+    import httpx
+    from openai import APIError
+    from types import SimpleNamespace
+
+    calls = []
+
+    def create(**request):
+        calls.append(1)
+        if len(calls) == 1:
+            def broken():
+                yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content="Hel"))])
+                raise APIError("The model stopped responding partway through the reply. Please retry.",
+                               httpx.Request("POST", "http://x"), body=None)
+            return broken()
+        return iter([SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content="Hello."))])])
+
+    inner = OpenAICompatModel("ilmu-glm-5.3-flash", "http://x", "k")
+    inner._client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    counted = CountingModel(inner)
+    assert counted.sample_text("Hi") == "Hello." and counted.stats.retries == 1

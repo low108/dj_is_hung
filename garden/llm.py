@@ -338,8 +338,10 @@ class OpenAICompatModel(language_model.LanguageModel):
     def _create(self, **request) -> str:
         """One completion's answer text, streamed: ILMU cuts off a request that takes too long to answer
         (503 'use streaming for long requests'), and GLM can reason for a minute before its first word.
-        A timeout or dropped connection is retryable, like an overload."""
-        from openai import APIConnectionError  # (APITimeoutError is one)
+        A timeout, a dropped connection or a reply cut off partway ('The model stopped responding partway
+        through the reply. Please retry.') is retryable, like an overload; HTTP errors (402 out of credit)
+        are left to CountingModel."""
+        from openai import APIError, APIStatusError  # (APIConnectionError and APITimeoutError are APIErrors)
 
         try:
             parts = []
@@ -347,7 +349,9 @@ class OpenAICompatModel(language_model.LanguageModel):
                 if chunk.choices and chunk.choices[0].delta.content:
                     parts.append(chunk.choices[0].delta.content)
             return "".join(parts)
-        except APIConnectionError as e:
+        except APIStatusError:
+            raise
+        except APIError as e:
             raise RetryableReply(f"{type(e).__name__}: {e}") from e
 
     def sample_choice(self, prompt: str, responses: Sequence[str], *, seed: int | None = None):
