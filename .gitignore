@@ -32,3 +32,6 @@ data/prompts/
 
 data/ablations/
 data/replays/
+
+# Local model files (downloaded separately)
+data/models/

@@ -386,6 +386,10 @@ def make_model(spec: str | None = None, attempts: int = 6) -> CountingModel:
         return _paced(GemmaModel(name or GEMMA), "gemma", name or GEMMA, attempts)
     if provider == "gemini":
         return _paced(GenAIModel(name or FLASH), "gemini", name or FLASH, attempts)
+    if provider == "mediapipe":  # type-safe decisions on this machine (garden/decisions.py): choices only
+        from .decisions import DEFAULT, DecisionMakerModel
+
+        return CountingModel(DecisionMakerModel(name or DEFAULT), attempts=attempts)
     if provider == "ilmu":
         inner = OpenAICompatModel(name or ILMU_MINI, ILMU_BASE_URL, os.environ["ILMU_API_KEY"])
         return _paced(inner, "ilmu", name or ILMU_MINI, attempts)
