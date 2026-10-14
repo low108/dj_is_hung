@@ -6,6 +6,11 @@
   --card: #ffffff;
   --border: #e3ded3;
   --error: #b3261e;
+  --hers: #e3f1e8;
+  --his: #f1efe9;
+  --thread: #f7f5ef;
+  --hot: #fff1d6;
+  --diary: #fbf6ea;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -17,6 +22,11 @@
     --card: #211f1c;
     --border: #36322c;
     --error: #f2b8b5;
+    --hers: #1f3a2c;
+    --his: #2c2925;
+    --thread: #1b1a18;
+    --hot: #3a2f1a;
+    --diary: #24211c;
   }
 }
 
@@ -397,63 +407,197 @@ button.link {
   font-weight: 600;
 }
 
-.her-days-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-.her-day {
-  border-top: 1px solid #00000014;
-  padding: 6px 0;
-}
-.her-day.gathering .her-day-head {
-  color: #6a4c93;
-}
-.her-day-head {
-  background: none;
-  border: none;
-  padding: 2px 0;
-  font: inherit;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-  width: 100%;
-}
-.her-lines {
-  list-style: none;
-  padding-left: 8px;
-  margin: 4px 0;
-}
-.her-line {
-  margin: 3px 0;
-  line-height: 1.35;
-}
-.her-line.hers .who {
-  font-weight: 600;
-}
-.her-line.his {
-  padding-left: 14px;
-}
-.her-line.special {
-  background: #fff3d6;
-  border-radius: 4px;
-  padding: 2px 6px;
-}
-.her-line .what {
-  color: #6b645c;
-}
-.her-days .news {
-  margin: 2px 0;
-}
 details.feed summary {
   cursor: pointer;
   font-weight: 600;
 }
 
-.her-reflection {
-  margin: 6px 0 2px 8px;
+
+
+/* Her days: one card per day, the conversation framed as a chat thread. */
+.her-days-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 12px;
+}
+.her-day.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 1px 2px #0000000d, 0 4px 14px #00000008;
+  overflow: hidden;
+}
+.her-day.gathering {
+  border-left: 4px solid #8f6cc4;
+}
+.her-day.date {
+  border-left: 4px solid var(--accent);
+}
+.her-day-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  width: 100%;
+  padding: 12px 14px;
+  background: none;
+  border: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.her-day-head:hover {
+  background: var(--thread);
+}
+.day-badge {
+  flex: none;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+}
+.her-day.gathering .day-badge {
+  background: #8f6cc4;
+}
+.day-title {
+  flex: 1 1 180px;
+  min-width: 0;
+  font-weight: 600;
+}
+.day-title .venue {
+  font-weight: 400;
+  color: var(--muted);
+}
+.chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.chip {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.chip.hot {
+  background: var(--hot);
+  border-color: transparent;
+}
+.caret {
+  color: var(--muted);
+  width: 12px;
+}
+.her-day-body {
+  padding: 0 14px 14px;
+}
+.her-days .news {
+  margin: 0 0 8px;
   padding: 6px 10px;
-  border-left: 3px solid #b5838d;
-  background: #00000006;
+  border-radius: 8px;
+  background: var(--thread);
+  color: var(--muted);
+  font-size: 13px;
+}
+.thread {
+  list-style: none;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--thread);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.turn {
+  display: flex;
+  flex-direction: column;
+  max-width: 88%;
+}
+@media (max-width: 480px) {
+  .her-day-body {
+    padding: 0 8px 10px;
+  }
+  .thread {
+    padding: 8px;
+  }
+  .turn {
+    max-width: 94%;
+  }
+}
+.turn.hers {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+.turn.his {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+.turn-meta {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0 6px 3px;
+}
+.turn-meta b {
+  color: var(--text);
+}
+.turn-meta .gist {
+  margin-left: 6px;
+  letter-spacing: 1px;
+}
+.bubble {
+  padding: 8px 12px;
+  border-radius: 14px;
+  line-height: 1.4;
+  border: 1px solid var(--border);
+}
+.turn.hers .bubble {
+  background: var(--hers);
+  border-bottom-right-radius: 4px;
+}
+.turn.his .bubble {
+  background: var(--his);
+  border-bottom-left-radius: 4px;
+}
+.turn.big .bubble {
+  background: var(--hot);
+  border-color: #e8c27a;
+}
+.turn.move {
+  align-self: center;
+  max-width: 100%;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px dashed var(--border);
+}
+.turn.move.big {
+  background: var(--hot);
+  color: var(--text);
+  border-style: solid;
+}
+.her-reflection {
+  margin: 12px 0 0;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--diary);
   font-style: italic;
+  line-height: 1.5;
+}
+.her-reflection .diary-head {
+  display: block;
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 4px;
 }

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { TwinState } from "./TwinPanel";
+import { ZONES, isArea } from "./world";
 
 /** The fields of a feed event (docs/event-contract.md) her log uses. */
 export type LogEvent = {
@@ -14,6 +15,8 @@ export type LogEvent = {
   emoji: string;
   announcement: string | null;
   announcement_kind: string | null;
+  venue?: string | null; // where the date was (scene pass, garden/scenes.py)
+  gist?: string[];
 };
 
 type Day = {
@@ -74,21 +77,41 @@ function title(d: Day): string {
   return "Between dates";
 }
 
+/** One turn in the thread: a line of speech is a chat bubble (hers on the right, his on the left);
+ * a turn without words is a small centred note of what was chosen. */
 function Line({ e, her }: { e: LogEvent; her: string }) {
-  const who = e.twin === her ? her : e.twin;
-  const toward = e.target && e.target !== her ? ` → ${e.target}` : e.target === her && e.twin !== her ? ` → ${her}` : "";
+  const side = e.twin === her ? "hers" : "his";
+  const toward = e.target && !(e.twin !== her && e.target === her) ? ` → ${e.target}` : "";
   const what = CHOSE[e.rung ?? ""] ?? e.rung;
-  const special = e.rung && !["talk", "reflect", "go_to"].includes(e.rung);
+  const big = e.rung === "propose_leaving" || e.rung === "go_beyond_wall";
+  if (!e.say)
+    return (
+      <li className={`turn move${big ? " big" : ""}`}>
+        <span>
+          {e.emoji} {e.twin} chose “{what || e.rung}”{toward}
+        </span>
+      </li>
+    );
   return (
-    <li className={`her-line ${e.twin === her ? "hers" : "his"}${special ? " special" : ""}`}>
-      <span className="who">
-        {e.emoji} {who}
+    <li className={`turn ${side}${big ? " big" : ""}`}>
+      <div className="turn-meta">
+        <b>{e.twin}</b>
         {toward}
-      </span>
-      {what && <span className="what"> chose “{what}”</span>}
-      {e.say && <q> {e.say}</q>}
+        {what && <span className="chose"> · {what}</span>}
+        {e.gist?.length ? <span className="gist">{e.gist.join("")}</span> : null}
+      </div>
+      <div className="bubble">
+        {e.emoji !== "💬" && <span className="bubble-emoji">{e.emoji} </span>}
+        {e.say}
+      </div>
     </li>
   );
+}
+
+/** Where a date day happened, from the scene pass (the first event that has a venue). */
+function venueOf(d: Day): string | null {
+  const v = d.lines.find((l) => isArea(l.venue))?.venue;
+  return isArea(v) ? `${ZONES[v].icon} ${ZONES[v].label}` : null;
 }
 
 /** Her twin's days, newest first: the current day open, earlier days one click away. */
@@ -122,34 +145,45 @@ export default function HerDays({
           const shown = d.day === current || open.has(d.day);
           const turns = d.lines.filter((l) => l.twin === her).length;
           return (
-            <li key={d.day} className={`her-day ${d.kind}`}>
+            <li key={d.day} className={`her-day card ${d.kind}${shown ? " open" : ""}`}>
               <button className="her-day-head" onClick={() => toggle(d.day)} aria-expanded={shown}>
-                <b>Day {d.day}</b> · {title(d)}
-                <span className="meta">
-                  {" "}
-                  · {turns} turn{turns === 1 ? "" : "s"}
-                  {d.lines.some((l) => l.rung === "propose_leaving" || l.rung === "go_beyond_wall") && " · 💌🧱"}
+                <span className="day-badge">Day {d.day}</span>
+                <span className="day-title">
+                  {title(d)}
+                  {venueOf(d) && <span className="venue"> · {venueOf(d)}</span>}
+                </span>
+                <span className="chips">
+                  <span className="chip">
+                    {turns} turn{turns === 1 ? "" : "s"}
+                  </span>
+                  {d.lines.some((l) => l.rung === "propose_leaving" || l.rung === "go_beyond_wall") && (
+                    <span className="chip hot">💌🧱</span>
+                  )}
+                  <span className="caret" aria-hidden>
+                    {shown ? "▾" : "▸"}
+                  </span>
                 </span>
               </button>
               {shown && (
-                <>
+                <div className="her-day-body">
                   {d.news.map((n) => (
-                    <p key={n} className="meta news">
+                    <p key={n} className="news">
                       📣 {n}
                     </p>
                   ))}
-                  <ul className="her-lines">
+                  <ul className="thread" aria-label={`Day ${d.day} conversation`}>
                     {d.lines.map((e) => (
                       <Line key={e.seq} e={e} her={her} />
                     ))}
-                    {!d.lines.length && <li className="meta">Nothing yet.</li>}
+                    {!d.lines.length && <li className="turn move">Nothing yet.</li>}
                   </ul>
                   {reflection(d.day) && (
                     <blockquote className="her-reflection">
-                      <span className="meta">🌙 That evening, {her} wrote privately:</span> {reflection(d.day)}
+                      <span className="diary-head">🌙 That evening, {her} wrote privately</span>
+                      {reflection(d.day)}
                     </blockquote>
                   )}
-                </>
+                </div>
               )}
             </li>
           );
