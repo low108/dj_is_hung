@@ -39,6 +39,8 @@ type FeedEvent = {
   say: string;
   line: string;
   announcement: string | null;
+  venue?: string | null; // scene pass (garden/scenes.py): where a date happens
+  gist?: string[]; // up to three emoji summing up the line
 };
 
 type CandidateHighlights = {
@@ -539,6 +541,7 @@ export default function Home() {
               key={`${view.source}#${view.startAt}:${view.nonce}`}
               events={feedEvents}
               twins={twinNames}
+              woman={her}
               onSelect={setSelected}
               onAnnouncement={toast}
               onProgress={setProgress}
