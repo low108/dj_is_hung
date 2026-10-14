@@ -168,9 +168,16 @@ function headline(r: Outcome | undefined): string {
   return `Timeout: no one crossed the wall in ${r.day} days`;
 }
 
+// The pools the demo offers: our demo participant only (Lina, Participant 1). NEXT_PUBLIC_DEMO_POOLS
+// lists others ("1,35"), or "all" for every eligible woman and the placeholder demo pool.
+const DEMO_POOLS = (process.env.NEXT_PUBLIC_DEMO_POOLS ?? "1").trim();
+const ALL_POOLS = DEMO_POOLS === "all";
+const SHOWN_POOLS = new Set(DEMO_POOLS.split(",").map((s) => Number(s.trim())));
+const DEFAULT_POOL = ALL_POOLS ? "" : DEMO_POOLS.split(",")[0].trim();
+
 export default function Home() {
   const [scenario, setScenario] = useState<Scenario>("breakout");
-  const [poolIid, setPoolIid] = useState<string>("");
+  const [poolIid, setPoolIid] = useState<string>(DEFAULT_POOL);
   const [model, setModel] = useState<string>("fake");
   const [pools, setPools] = useState<{ iid: number; matches: number; dates: number }[]>([]);
 
@@ -192,13 +199,15 @@ export default function Home() {
 
   // Signed out, or no reviewed twin: "My twin" can't stay selected.
   useEffect(() => {
-    if (!myTwin?.reviewed) setPoolIid((p) => (p === MY_TWIN ? "" : p));
+    if (!myTwin?.reviewed) setPoolIid((p) => (p === MY_TWIN ? DEFAULT_POOL : p));
   }, [myTwin]);
 
   useEffect(() => {
     fetch(`${API_URL}/pools`)
       .then((r) => (r.ok ? r.json() : []))
-      .then(setPools)
+      .then((all: { iid: number; matches: number; dates: number }[]) =>
+        setPools(ALL_POOLS ? all : all.filter((p) => SHOWN_POOLS.has(p.iid))),
+      )
       .catch(() => setPools([])); // no dataset downloaded: only the demo pool is offered
   }, []);
   const [sim, setSim] = useState<Simulation | null>(null);
@@ -446,7 +455,7 @@ export default function Home() {
         <label>
           Pool{" "}
           <select value={poolIid} onChange={(e) => setPoolIid(e.target.value)} aria-label="Pool">
-            <option value="">Demo pool (Mara)</option>
+            {ALL_POOLS && <option value="">Demo pool (Mara)</option>}
             {myTwin && (
               <option value={MY_TWIN} disabled={!myTwin.reviewed}>
                 My twin ({myTwin.alias}) with the demo men{myTwin.reviewed ? "" : " (review it first)"}
