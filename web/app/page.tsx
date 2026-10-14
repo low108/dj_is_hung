@@ -576,7 +576,7 @@ export default function Home() {
             )}
           </div>
           {feedEvents.length > 0 && (
-            <Timeline events={feedEvents} days={lastDay} atSeq={progress.seq} atDay={progress.day} onJump={jump} />
+            <Timeline events={feedEvents} days={lastDay} atSeq={progress.seq} atDay={progress.day} her={her} onJump={jump} />
           )}
           {selected ? (
             <TwinPanel twin={selected} state={panelState(selected)} onClose={() => setSelected(null)} />

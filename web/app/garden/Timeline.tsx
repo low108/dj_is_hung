@@ -1,5 +1,8 @@
 "use client";
 
+import { useEffect, useRef } from "react";
+import { ZONES, isArea } from "./world";
+
 export const isWallCrossing = (e: { rung: string | null }) => e.rung === "go_beyond_wall";
 
 /** The fields of a feed event (docs/event-contract.md) the timeline uses. */
@@ -11,6 +14,7 @@ export type TimelineEvent = {
   target: string | null;
   announcement: string | null;
   announcement_kind: string | null;
+  venue?: string | null;
 };
 
 type Marker = { id: string; emoji: string; label: string; matches: (e: TimelineEvent) => boolean };
@@ -32,60 +36,96 @@ function describe(e: TimelineEvent, label: string): string {
   return `Day ${e.day}: ${label}, ${e.twin}${e.target ? ` → ${e.target}` : ""}`;
 }
 
-/** Days across, one row of markers per kind; click a marker to jump the map there. */
+type DayCard = {
+  day: number;
+  first: number; // the day's first seq: where clicking the card jumps
+  with: string | null; // who she's paired with that day
+  gathering: boolean;
+  venue: string | null; // "🏀 Sports court" (scene pass)
+  moments: { marker: Marker; events: TimelineEvent[] }[];
+};
+
+function dayCards(events: TimelineEvent[], days: number, her: string | null): DayCard[] {
+  const cards: DayCard[] = [];
+  let partner: string | null = null;
+  for (let day = 1; day <= Math.max(days, 1); day++) {
+    const today = events.filter((e) => e.day === day);
+    for (const e of today) {
+      if (!her || !e.announcement?.includes(her)) continue;
+      if (e.announcement_kind === "paired") partner = e.announcement.split(":")[0].split(" and ").find((n) => n !== her) ?? null;
+      if (e.announcement_kind === "ended") partner = null;
+    }
+    const gathering = today.some((e) => e.announcement_kind === "gathering");
+    const venue = today.find((e) => isArea(e.venue) && (e.twin === her || e.target === her))?.venue;
+    cards.push({
+      day,
+      first: today[0]?.seq ?? 0,
+      with: gathering ? null : partner,
+      gathering,
+      venue: isArea(venue) ? `${ZONES[venue].icon} ${ZONES[venue].label}` : null,
+      moments: MARKERS.map((marker) => ({ marker, events: today.filter(marker.matches) })).filter((m) => m.events.length),
+    });
+  }
+  return cards;
+}
+
+/** The run's days as a row of cards you scroll sideways: who she's with and where, and the day's
+ * moments as chips. Click a card (or a chip) to jump the map there; the row follows the day playing. */
 export default function Timeline({
   events,
   days,
   atSeq,
   atDay,
+  her = null,
   onJump,
 }: {
   events: TimelineEvent[];
   days: number;
   atSeq: number; // the last event the map has played
   atDay: number; // the day the map is on
+  her?: string | null;
   onJump: (seq: number) => void;
 }) {
-  const span = Math.max(days, 1);
-  const dayLeft = (day: number) => `${((day - 0.5) / span) * 100}%`;
+  const strip = useRef<HTMLOListElement>(null);
+  useEffect(() => {
+    const row = strip.current;
+    const card = row?.querySelector<HTMLElement>(`[data-day="${atDay}"]`);
+    if (card && row) row.scrollTo({ left: card.offsetLeft - row.clientWidth / 2 + card.clientWidth / 2, behavior: "smooth" });
+  }, [atDay]);
+
+  const cards = dayCards(events, days, her);
   return (
     <div className="timeline" data-testid="timeline">
-      <div className="timeline-days">
-        {Array.from({ length: span }, (_, i) => (
-          <span key={i} style={{ left: dayLeft(i + 1) }} className={i + 1 === atDay ? "now" : ""}>
-            {i + 1}
-          </span>
-        ))}
-      </div>
-      {MARKERS.map((m) => {
-        const hits = events.filter(m.matches);
-        return (
-          <div key={m.id} className="timeline-row" data-kind={m.id}>
-            <span className="timeline-label">
-              {m.emoji} {m.label}
-            </span>
-            <div className="timeline-track">
-              {hits.map((e, i) => {
-                // Several on one day sit side by side rather than on top of each other.
-                const nth = hits.slice(0, i).filter((h) => h.day === e.day).length;
-                const text = describe(e, m.label);
-                return (
-                  <button
-                    key={e.seq}
-                    className={`marker${e.seq <= atSeq ? " past" : ""}`}
-                    style={{ left: `calc(${dayLeft(e.day)} + ${nth * 6}px)` }}
-                    title={text}
-                    aria-label={text}
-                    onClick={() => onJump(e.seq)}
-                  >
-                    {m.emoji}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
+      <ol className="day-strip" ref={strip} aria-label="Days">
+        {cards.map((c) => {
+          const state = c.day === atDay ? " now" : c.day < atDay ? " past" : "";
+          return (
+            <li key={c.day} data-day={c.day} className={`day-card${c.gathering ? " gathering" : ""}${state}`}>
+              <button className="day-card-main" onClick={() => c.first && onJump(c.first)} disabled={!c.first}>
+                <span className="day-card-day">Day {c.day}</span>
+                <span className="day-card-who">{c.gathering ? "🎉 Gathering" : c.with ? `with ${c.with}` : "—"}</span>
+                {c.venue && <span className="day-card-where">{c.venue}</span>}
+              </button>
+              {c.moments.length > 0 && (
+                <span className="day-card-moments">
+                  {c.moments.map(({ marker, events: hits }) => (
+                    <button
+                      key={marker.id}
+                      className={`moment${hits[0].seq <= atSeq ? " seen" : ""}`}
+                      title={hits.map((e) => describe(e, marker.label)).join("\n")}
+                      aria-label={`${marker.label} on day ${c.day}`}
+                      onClick={() => onJump(hits[0].seq)}
+                    >
+                      {marker.emoji}
+                      {hits.length > 1 && <sub>{hits.length}</sub>}
+                    </button>
+                  ))}
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ol>
     </div>
   );
 }
