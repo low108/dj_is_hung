@@ -36,7 +36,10 @@ def make_twin_model(spec: RunSpec, personas: dict[str, str] = PERSONAS, fake_sce
     from .concordia_twins import ConcordiaTwins  # heavy import, only for real runs
     from .llm import make_model
 
-    return ConcordiaTwins(make_model(spec.model), personas)
+    from . import memory_bank
+
+    memory = memory_bank.MemoryBankFactory() if memory_bank.enabled() else None  # production only
+    return ConcordiaTwins(make_model(spec.model), personas, memory=memory)
 
 
 def make_highlight_model(models: list[str]):

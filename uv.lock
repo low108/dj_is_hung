@@ -484,6 +484,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "firebase-admin" },
     { name = "gdm-concordia" },
+    { name = "google-cloud-agentplatform" },
     { name = "google-cloud-firestore" },
     { name = "google-genai" },
     { name = "mediapipe" },
@@ -504,6 +505,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "firebase-admin", specifier = ">=6.5" },
     { name = "gdm-concordia", specifier = ">=2.4.0" },
+    { name = "google-cloud-agentplatform", specifier = "==2.3.0" },
     { name = "google-cloud-firestore", specifier = ">=2.19" },
     { name = "google-genai", specifier = ">=2.29.0" },
     { name = "mediapipe", specifier = "==1.1.0" },
@@ -686,6 +688,25 @@ wheels = [
 [package.optional-dependencies]
 requests = [
     { name = "requests" },
+]
+
+[[package]]
+name = "google-cloud-agentplatform"
+version = "2.3.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "google-api-core" },
+    { name = "google-auth" },
+    { name = "google-genai" },
+    { name = "packaging" },
+    { name = "proto-plus" },
+    { name = "protobuf" },
+    { name = "pydantic" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f4/c1/b37c2fad324df1b13504d2ff4db3703d6792f9b88d8d16d0f87e55b21da3/google_cloud_agentplatform-2.3.0.tar.gz", hash = "sha256:c06699f1950f4cf6b3ee88c752e39320a72808bb6f6a139332896ae939cdda4e", size = 518728, upload-time = "2026-09-30T23:00:25.081Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/50/78/b35e92a488f87c2ae11844a83190abc7500ed650f11234c712956f7504aa/google_cloud_agentplatform-2.3.0-py3-none-any.whl", hash = "sha256:fbfe008b8db485afdd9ddc6d21ae782bc55c506071e5b81db7f31c98f29ed300", size = 576863, upload-time = "2026-09-30T23:00:23.229Z" },
 ]
 
 [[package]]

@@ -183,9 +183,13 @@ class ConcordiaTwins:
     """One Concordia agent per twin. Calls per action: 1 rung choice, +1 target choice when there
     are several people to choose from, +1 line of speech for social actions."""
 
-    def __init__(self, model: language_model.LanguageModel, personas: dict[str, str] | None = None):
+    def __init__(self, model: language_model.LanguageModel, personas: dict[str, str] | None = None,
+                 memory: Callable[[str, Callable], object] | None = None):
+        """`memory(twin, embedder)` makes a twin's memory bank (production: Vertex AI Memory Bank, see
+        garden/memory_bank.py); by default each twin has Concordia's local bank."""
         self._model = model
         self._personas = personas or {}
+        self._memory = memory
         self._agents: dict[str, object] = {}
         self._diaries: dict[str, Diary] = {}
         self._people: dict[str, People] = {}
@@ -227,7 +231,8 @@ class ConcordiaTwins:
         if twin.alias not in self._agents:
             world = BASE_MEMORIES + (STANDING_MEMORIES if standing_in_play else ())
             persona = [line.strip() for line in self._personas.get(twin.alias, "").splitlines() if line.strip()]
-            bank = basic_associative_memory.AssociativeMemoryBank(sentence_embedder=hash_embedder)
+            bank = (self._memory(twin.alias, hash_embedder) if self._memory
+                    else basic_associative_memory.AssociativeMemoryBank(sentence_embedder=hash_embedder))
             for memory in (*world, *persona):
                 bank.add(memory)
             self._diaries[twin.alias] = Diary("", pre_act_label=DIARY_LABEL.format(name=twin.alias))
