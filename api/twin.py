@@ -66,7 +66,8 @@ def build_twin(request: Request, uid: str = Depends(current_user)) -> dict:
 
     def save(current: dict | None) -> dict:
         current = current or qa.new_doc()
-        return current | {"twin": tb.new_twin(uid, extraction, configured.name, at, current.get("twin"))}
+        return current | {"twin": tb.new_twin(uid, extraction, configured.name, at, current.get("twin"),
+                                              current.get("about"))}
 
     saved = request.app.state.store.update_user(uid, save)
     return tb.summary(saved["twin"], saved["answers"])

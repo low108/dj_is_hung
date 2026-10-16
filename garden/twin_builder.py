@@ -136,10 +136,15 @@ def rebel_memory(rebelliousness: float) -> str:
     return ""
 
 
-def new_twin(uid: str, extraction: Extraction, model_name: str, at: str, previous: dict | None = None) -> dict:
-    """A freshly built twin. A rebuild keeps the user's edits but must be reviewed again."""
+def new_twin(uid: str, extraction: Extraction, model_name: str, at: str, previous: dict | None = None,
+             about: dict | None = None) -> dict:
+    """A freshly built twin. A rebuild keeps the user's edits but must be reviewed again. `about` is the
+    user's About-you forms (garden/about_me.py): their facts are fixed at build time, like the extraction."""
+    from .about_me import memories as about_memories
+
     previous = previous or {}
     return {"alias": alias_for(uid), "built_at": at, "model": model_name,
+            "about": about_memories(about or {}),
             "extraction": extraction.model_dump(), "overrides": previous.get("overrides", {}),
             "trait_overrides": previous.get("trait_overrides", {}),
             "reviewed": False, "version": previous.get("version", 0) + 1}
@@ -193,7 +198,10 @@ def mark_reviewed(twin: dict) -> dict:
 
 def garden_inputs(twin: dict) -> tuple[str, str]:
     """What the Garden needs about her twin: alias and persona (seed memories, plus how she sees rules)."""
-    lines = [m["text"] for m in memories(twin)] + [rebel_memory(traits(twin).rebelliousness)]
+    from .about_me import STRICT_GROUNDING
+
+    lines = ([m["text"] for m in twin.get("about", [])] + [m["text"] for m in memories(twin)]
+             + [rebel_memory(traits(twin).rebelliousness), STRICT_GROUNDING])  # a real person: invent nothing
     return twin["alias"], "\n".join(line for line in lines if line)
 
 
@@ -214,5 +222,6 @@ def summary(twin: dict, answers: dict[str, dict]) -> dict:
         "traits_edited": sorted(twin.get("trait_overrides", {})),
         "rebelliousness_because": evidence,
         "rebel_memory": rebel_memory(t.rebelliousness),
+        "about": twin.get("about", []),  # the facts from the About-you forms, as the twin knows them
         "memory_count": len(mems),
     }

@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from api.main import create_app
 from api.store import MemoryStore
 from garden import demo
+from garden.about_me import STRICT_GROUNDING
 from garden import onboarding as qa
 from garden import twin_builder as tb
 
@@ -134,7 +135,8 @@ def test_her_persona_and_how_she_sees_rules_reach_the_world():
     her = tb.new_twin("u", extraction(rebel=1.0), "fake", "now")
     pool = demo.with_her_twin(*tb.garden_inputs(her))
     persona = pool.personas[her["alias"]]
-    assert persona.startswith("I remember moment") and persona.endswith(tb.rebel_memory(1.0))
+    assert persona.startswith("I remember moment") and tb.rebel_memory(1.0) in persona
+    assert persona.endswith(STRICT_GROUNDING)  # a real person's twin invents nothing about them
     assert pool.woman == her["alias"]
 
 

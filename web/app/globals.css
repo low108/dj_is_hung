@@ -925,3 +925,144 @@ details.feed summary {
   width: 18px;
   text-align: center;
 }
+
+/* Onboarding: About you (profile, Mini-IPIP, 100 points). */
+.about .about-part {
+  border-top: 1px solid var(--border);
+}
+.about-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 0;
+  background: none;
+  border: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.about-check {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  color: #fff;
+}
+.about-check.done {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.about-body {
+  padding: 0 0 14px 32px;
+  display: grid;
+  gap: 10px;
+}
+.about-row {
+  display: grid;
+  grid-template-columns: 90px 1fr 1fr;
+  gap: 8px;
+}
+.about-row label,
+.points {
+  display: grid;
+  gap: 2px;
+  font-size: 13px;
+}
+.about-row input {
+  font: inherit;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: inherit;
+  min-width: 0;
+}
+.interest-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.interest {
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: inherit;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.interest.love {
+  background: var(--hers);
+  border-color: var(--accent);
+}
+.interest.dislike {
+  background: var(--his);
+  color: var(--muted);
+}
+.ipip {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.ipip li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 10px;
+}
+.ipip-text {
+  flex: 1 1 220px;
+}
+.ipip-scale {
+  display: flex;
+  gap: 4px;
+}
+.ipip-scale button {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.ipip-scale button.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.points {
+  grid-template-columns: minmax(120px, 1fr) 2fr 36px;
+  align-items: center;
+}
+.about-facts summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.about-facts ul,
+.about-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+@media (max-width: 520px) {
+  .about-row {
+    grid-template-columns: 1fr;
+  }
+  .about-body {
+    padding-left: 0;
+  }
+}
+.points input[type="range"] {
+  accent-color: var(--accent);
+}

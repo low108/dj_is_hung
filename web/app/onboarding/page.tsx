@@ -12,6 +12,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ApiError, authedFetch, firebaseAuth } from "../firebase";
 import TwinReview, { type TwinSummary } from "./TwinReview";
+import AboutYou, { type About } from "./AboutYou";
 
 /** GET /me/onboarding: where the user is, so they can resume where they left off. */
 type Progress = {
@@ -33,6 +34,7 @@ export default function Onboarding() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [twin, setTwin] = useState<TwinSummary | null>(null);
+  const [about, setAbout] = useState<About | null>(null);
 
   /** Runs one API step and stores its reply with `keep`; true if it worked (the error is shown otherwise). */
   async function run<T>(step: () => Promise<T>, keep: (value: T) => void): Promise<boolean> {
@@ -65,11 +67,15 @@ export default function Onboarding() {
     setAgreed(false);
     setError(null);
     setTwin(null);
+    setAbout(null);
     if (!user) return;
     let stale = false;
     const shown = (e: unknown) => !stale && setError(e instanceof Error ? e.message : String(e));
     authedFetch<Progress>(user, "/me/onboarding")
       .then((p) => !stale && setProgress(p))
+      .catch(shown);
+    authedFetch<About>(user, "/me/about")
+      .then((a) => !stale && setAbout(a))
       .catch(shown);
     authedFetch<TwinSummary>(user, "/me/twin")
       .then((t) => !stale && setTwin(t))
@@ -119,6 +125,19 @@ export default function Onboarding() {
             Continue
           </button>
         </section>
+      )}
+
+      {user && progress?.consent && about?.form && (
+        <AboutYou
+          about={about}
+          busy={busy}
+          onSave={(part, body) =>
+            run(
+              () => authedFetch<About>(user, `/me/about/${part}`, { method: "PUT", body }),
+              (saved) => setAbout({ ...about, ...saved }),
+            )
+          }
+        />
       )}
 
       {user && progress?.consent && current && (
