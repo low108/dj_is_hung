@@ -294,6 +294,8 @@ export default function GardenMap({
         busy = true;
         s.badge.setText(next.emoji).setVisible(!!next.emoji);
         const doing = next.rung ? (DOING[next.rung]?.(next.target ?? null) ?? "") : "";
+        // One action label at a time (the latest): side by side, two labels run into each other.
+        for (const other of sprites.values()) if (other !== s) other.doing.setVisible(false);
         s.doing.setText(doing).setVisible(true);
         scene.time.delayedCall(BUBBLE_MS * 1.5, () => s.doing.text === doing && s.doing.setVisible(false));
         // The bubble sums the line up in up to three emoji; the words themselves are in her log.
