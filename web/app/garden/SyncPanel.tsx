@@ -22,6 +22,7 @@ export default function SyncPanel({ events, her, atSeq }: { events: SyncEvent[];
   const pairRef = useRef(pair);
   pairRef.current = pair;
   const canvas = useRef<HTMLCanvasElement>(null);
+  const hasPair = !!pair;
 
   useEffect(() => {
     const el = canvas.current;
@@ -199,7 +200,7 @@ export default function SyncPanel({ events, her, atSeq }: { events: SyncEvent[];
       cancelAnimationFrame(frame);
       resize.disconnect();
     };
-  }, [her]);
+  }, [her, hasPair]); // the canvas only exists once there is a pair to draw: set it up then
 
   if (!pair) return null;
   const f = (x: number) => x.toFixed(2);
