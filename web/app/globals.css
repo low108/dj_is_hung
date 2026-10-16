@@ -762,12 +762,55 @@ details.feed summary {
   font-size: 9px;
   color: #8e89ad;
 }
-.sync-note {
-  margin: 0;
-  padding: 6px 14px 12px;
+.sync-table {
+  width: 100%;
+  border-collapse: collapse;
   background: #0b0a14;
+  font: 13px "Iowan Old Style", Palatino, Georgia, serif;
+  color: #d9d5ee;
+}
+.sync-table th,
+.sync-table td {
+  padding: 6px 10px;
+  border-top: 1px solid #1f1d33;
+  text-align: left;
+  vertical-align: baseline;
+}
+.sync-table thead th {
   font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   color: #8e89ad;
+  border-top: none;
+}
+.sync-table tbody th {
+  width: 28px;
+  font-size: 16px;
+  color: #f3efff;
+}
+.sync-table td:nth-child(2) {
+  color: #a9a4c4;
+}
+.sync-table .her {
+  color: #ffc77a;
+}
+.sync-table .him {
+  color: #a9d0ff;
+}
+.sync-table .why {
+  display: block;
+  font-size: 10px;
+  color: #8e89ad;
+}
+.sync-table thead .her,
+.sync-table thead .him {
+  font-size: 12px;
+}
+.sync-result td:last-child {
+  font-weight: 600;
+}
+.sync-result td.locked {
+  color: #ffe2b0;
 }
 @media (max-width: 520px) {
   .sync-eq {

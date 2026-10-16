@@ -203,9 +203,7 @@ export default function SyncPanel({ events, her, atSeq }: { events: SyncEvent[];
 
   if (!pair) return null;
   const f = (x: number) => x.toFixed(2);
-  const caption = pair.locked
-    ? `Two different rhythms, each willing to be pulled: locked, ${Math.abs(pair.gap!).toFixed(0)}° apart. Still two people.`
-    : `Their rhythms are further apart than they pull on each other: they drift.`;
+  const caption = pair.locked ? `🔗 In sync, ${Math.abs(pair.gap!).toFixed(0)}° apart` : "〰️ Drifting apart";
   return (
     <section className="sync" aria-label="In sync?">
       <div className="sync-stage">
@@ -226,10 +224,6 @@ export default function SyncPanel({ events, her, atSeq }: { events: SyncEvent[];
       </div>
       <div className="sync-subtitle">
         <p className={`sync-caption${pair.locked ? " locked" : ""}`}>{caption}</p>
-        <p className="sync-cond">
-          |ω₁ − ω₂| = {f(Math.abs(pair.omegaHer - pair.omegaHim))} {pair.locked ? "≤" : ">"} K₁ + K₂ = {f(pair.kHer + pair.kHim)}
-          {pair.locked && pair.common !== null && <> · Ω = {f(pair.common)}</>}
-        </p>
       </div>
       <div className="sync-men" role="tablist" aria-label="Choose a man">
         {pairs.map((p) => (
@@ -247,10 +241,42 @@ export default function SyncPanel({ events, her, atSeq }: { events: SyncEvent[];
           </button>
         ))}
       </div>
-      <p className="sync-note">
-        ω: how often each reaches out by choice, per day so far · K₁: his share of the times {her} chose whom to approach (
-        {pair.approaches}) · K₂: how often he turns toward her bids when he could walk away
-      </p>
+      <table className="sync-table">
+        <thead>
+          <tr>
+            <th scope="col"></th>
+            <th scope="col">Means</th>
+            <th scope="col" className="her">{her}</th>
+            <th scope="col" className="him">{pair.man}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">ω</th>
+            <td>own rhythm: reaches out by choice</td>
+            <td className="her">{f(pair.omegaHer)}</td>
+            <td className="him">{f(pair.omegaHim)}</td>
+          </tr>
+          <tr>
+            <th scope="row">K</th>
+            <td>lets the other pull them</td>
+            <td className="her">
+              {f(pair.kHer)} <span className="why">picked him {pair.approaches}×</span>
+            </td>
+            <td className="him">
+              {f(pair.kHim)} <span className="why">answers her</span>
+            </td>
+          </tr>
+          <tr className="sync-result">
+            <th scope="row">=</th>
+            <td>in sync if gap ≤ pull</td>
+            <td colSpan={2} className={pair.locked ? "locked" : ""}>
+              {f(Math.abs(pair.omegaHer - pair.omegaHim))} {pair.locked ? "≤" : ">"} {f(pair.kHer + pair.kHim)} ·{" "}
+              {pair.locked ? "🔗 in sync" : "〰️ drifting"}
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </section>
   );
 }
