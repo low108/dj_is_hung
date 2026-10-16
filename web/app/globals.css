@@ -645,106 +645,139 @@ details.feed summary {
   margin-bottom: 4px;
 }
 
-/* In sync? Her and one man as two coupled rhythms (garden/sync.ts). */
+/* In sync? Her and one man as two coupled rhythms (garden/sync.ts), in the style of the explainer:
+   rings and threads of light in space, serif type, a centred caption. */
 .sync {
   margin: 4px 0 14px;
-  padding: 12px 14px;
-  border-radius: 14px;
-  background: radial-gradient(ellipse at 50% 40%, #1d1b33 0%, #0e0d17 75%);
+  border-radius: 16px;
+  overflow: hidden;
+  background: #07060d;
   color: #e9e6f5;
+  box-shadow: 0 8px 30px #0000002e;
 }
-.sync-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 10px;
+.sync-stage {
+  position: relative;
 }
-.sync-head h3 {
+.sync-canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 7;
+  min-height: 260px;
+}
+.sync-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  text-align: center;
+  pointer-events: none;
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+}
+.sync-overlay.top {
+  top: 12px;
+}
+.sync-subtitle {
+  padding: 8px 16px 2px;
+  background: #07060d;
+  text-align: center;
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+}
+.sync-chapter {
+  display: block;
+  text-align: left;
+  padding-left: 16px;
+  margin-bottom: 6px;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: #8e89ad;
+}
+.sync-eq {
+  display: grid;
+  gap: 2px;
+  font-size: 17px;
+  color: #f3efff;
+  text-shadow: 0 0 12px #9b8cff55;
+}
+.sync-eq i {
+  font-style: normal;
+}
+.sync-eq i.her {
+  color: #ffc77a;
+}
+.sync-eq i.him {
+  color: #a9d0ff;
+}
+.sync-eq sub {
+  font-size: 0.65em;
+}
+.sync-caption {
   margin: 0;
-  font-size: 1rem;
+  font-size: 14px;
+  color: #d9d5ee;
+  letter-spacing: 0.02em;
 }
-.sync .meta {
-  color: #a9a4c4;
+.sync-caption.locked {
+  color: #ffe2b0;
+}
+.sync-cond {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: #8e89ad;
 }
 .sync-men {
   display: flex;
   gap: 6px;
   overflow-x: auto;
-  padding: 8px 0 4px;
+  padding: 10px 14px 4px;
+  background: #0b0a14;
 }
 .sync-man {
   flex: none;
-  border: 1px solid #3a3757;
-  background: #17162a;
-  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #2c2945;
+  background: #121022;
+  color: #d9d5ee;
   border-radius: 999px;
-  padding: 3px 10px;
-  font: inherit;
-  font-size: 13px;
+  padding: 4px 11px;
+  font: 13px "Iowan Old Style", Palatino, Georgia, serif;
   cursor: pointer;
 }
 .sync-man.on {
   border-color: #e8a24a;
-  background: #2a2340;
+  background: #221a33;
+  color: #fff;
+}
+.sync-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #4a4766;
+}
+.sync-man.locked .sync-dot {
+  background: #ffc77a;
+  box-shadow: 0 0 6px #e8a24a;
 }
 .sync-man sub {
   font-size: 9px;
-  margin-left: 2px;
-  color: #a9a4c4;
+  color: #8e89ad;
 }
-.sync-svg {
-  display: block;
-  width: 100%;
-  max-width: 620px;
-  height: auto;
-  margin: 4px auto 0;
+.sync-note {
+  margin: 0;
+  padding: 6px 14px 12px;
+  background: #0b0a14;
+  font-size: 11px;
+  color: #8e89ad;
 }
-.sync-svg .ring {
-  fill: none;
-  stroke-width: 1.5;
-}
-.sync-svg .ring.her {
-  stroke: #e8a24a;
-}
-.sync-svg .ring.him {
-  stroke: #5b9be0;
-}
-.sync-svg .dot.her {
-  fill: #ffd08a;
-  filter: drop-shadow(0 0 4px #e8a24a);
-}
-.sync-svg .dot.him {
-  fill: #a9d0ff;
-  filter: drop-shadow(0 0 4px #5b9be0);
-}
-.sync-svg .tie {
-  stroke: #ffffff55;
-  stroke-width: 1;
-}
-.sync-svg .tie.locked {
-  stroke: #ffffffcc;
-  stroke-width: 1.5;
-}
-.sync-svg .who {
-  fill: #cfcbe4;
-  font-size: 13px;
-}
-.sync-math {
-  display: grid;
-  gap: 2px;
-  justify-items: center;
-  text-align: center;
-  font-size: 13px;
-}
-.sync-math code {
-  font-family: "Iowan Old Style", "Palatino", Georgia, serif;
-  font-size: 14px;
-  color: #f3efff;
-}
-.sync-verdict {
-  margin: 6px 0 2px;
-  max-width: 560px;
-}
-.sync-verdict.locked {
-  color: #ffd99c;
+@media (max-width: 520px) {
+  .sync-eq {
+    font-size: 13px;
+  }
+  .sync-caption {
+    font-size: 12px;
+    padding: 0 10px;
+  }
+  .sync-canvas {
+    aspect-ratio: 1 / 1;
+  }
 }
