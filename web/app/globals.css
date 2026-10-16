@@ -644,3 +644,107 @@ details.feed summary {
   color: var(--muted);
   margin-bottom: 4px;
 }
+
+/* In sync? Her and one man as two coupled rhythms (garden/sync.ts). */
+.sync {
+  margin: 4px 0 14px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: radial-gradient(ellipse at 50% 40%, #1d1b33 0%, #0e0d17 75%);
+  color: #e9e6f5;
+}
+.sync-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+.sync-head h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+.sync .meta {
+  color: #a9a4c4;
+}
+.sync-men {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 8px 0 4px;
+}
+.sync-man {
+  flex: none;
+  border: 1px solid #3a3757;
+  background: #17162a;
+  color: inherit;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.sync-man.on {
+  border-color: #e8a24a;
+  background: #2a2340;
+}
+.sync-man sub {
+  font-size: 9px;
+  margin-left: 2px;
+  color: #a9a4c4;
+}
+.sync-svg {
+  display: block;
+  width: 100%;
+  max-width: 620px;
+  height: auto;
+  margin: 4px auto 0;
+}
+.sync-svg .ring {
+  fill: none;
+  stroke-width: 1.5;
+}
+.sync-svg .ring.her {
+  stroke: #e8a24a;
+}
+.sync-svg .ring.him {
+  stroke: #5b9be0;
+}
+.sync-svg .dot.her {
+  fill: #ffd08a;
+  filter: drop-shadow(0 0 4px #e8a24a);
+}
+.sync-svg .dot.him {
+  fill: #a9d0ff;
+  filter: drop-shadow(0 0 4px #5b9be0);
+}
+.sync-svg .tie {
+  stroke: #ffffff55;
+  stroke-width: 1;
+}
+.sync-svg .tie.locked {
+  stroke: #ffffffcc;
+  stroke-width: 1.5;
+}
+.sync-svg .who {
+  fill: #cfcbe4;
+  font-size: 13px;
+}
+.sync-math {
+  display: grid;
+  gap: 2px;
+  justify-items: center;
+  text-align: center;
+  font-size: 13px;
+}
+.sync-math code {
+  font-family: "Iowan Old Style", "Palatino", Georgia, serif;
+  font-size: 14px;
+  color: #f3efff;
+}
+.sync-verdict {
+  margin: 6px 0 2px;
+  max-width: 560px;
+}
+.sync-verdict.locked {
+  color: #ffd99c;
+}

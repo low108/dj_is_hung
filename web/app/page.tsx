@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Progress } from "./garden/GardenMap";
 import HerDays from "./garden/HerDays";
 import Timeline, { isWallCrossing } from "./garden/Timeline";
+import SyncPanel from "./garden/SyncPanel";
 import TwinPanel, { type TwinState } from "./garden/TwinPanel";
 import { API_URL, ApiError, authedFetch, firebaseAuth } from "./firebase";
 
@@ -587,6 +588,7 @@ export default function Home() {
           {feedEvents.length > 0 && (
             <Timeline events={feedEvents} days={lastDay} atSeq={progress.seq} atDay={progress.day} her={her} onJump={jump} />
           )}
+          {her && feedEvents.length > 0 && <SyncPanel events={feedEvents} her={her} atSeq={progress.seq} />}
           {selected ? (
             <TwinPanel twin={selected} state={panelState(selected)} onClose={() => setSelected(null)} />
           ) : (
