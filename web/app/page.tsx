@@ -180,6 +180,12 @@ const DEMO_POOLS = (process.env.NEXT_PUBLIC_DEMO_POOLS ?? "1").trim();
 const ALL_POOLS = DEMO_POOLS === "all";
 const SHOWN_POOLS = new Set(DEMO_POOLS.split(",").map((s) => Number(s.trim())));
 const DEFAULT_POOL = ALL_POOLS ? "" : DEMO_POOLS.split(",")[0].trim();
+// The saved runs the demo offers: our demo run only (Lina, seed 8). NEXT_PUBLIC_DEMO_REPLAYS lists others
+// as sim/run ("ddd60e575909/r00,1c8cb8a59c54/r00"), or "all" for every saved run.
+const DEMO_REPLAYS = (process.env.NEXT_PUBLIC_DEMO_REPLAYS ?? "ddd60e575909/r00").trim();
+const SHOWN_REPLAYS = new Set(DEMO_REPLAYS.split(",").map((s) => s.trim()));
+const showReplay = (r: { sim_id: string; run_id: string }) =>
+  DEMO_REPLAYS === "all" || SHOWN_REPLAYS.has(`${r.sim_id}/${r.run_id}`);
 
 export default function Home() {
   const [scenario, setScenario] = useState<Scenario>("breakout");
@@ -245,7 +251,11 @@ export default function Home() {
   async function loadReplays() {
     try {
       const res = await fetch(`${API_URL}/replays`);
-      if (res.ok) setReplays(await res.json());
+      if (res.ok) {
+        const saved = ((await res.json()) as ReplaySummary[]).filter(showReplay);
+        setReplays(saved);
+        if (DEMO_REPLAYS !== "all" && saved.length) setPicked((p) => p || replayKey(saved[0]));
+      }
     } catch {
       setReplays([]);
     }
