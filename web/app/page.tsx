@@ -9,6 +9,7 @@ import HerDays from "./garden/HerDays";
 import Timeline, { isWallCrossing } from "./garden/Timeline";
 import SyncPanel from "./garden/SyncPanel";
 import TwinPanel, { type TwinState } from "./garden/TwinPanel";
+import TwinRoster, { type Profiles } from "./garden/Profiles";
 import { API_URL, ApiError, authedFetch, firebaseAuth } from "./firebase";
 
 // Phaser touches `window`, so the map only loads in the browser.
@@ -90,6 +91,8 @@ type ReplaySummary = {
 type Replay = ReplaySummary & Outcome & {
   twins: string[];
   woman?: string;
+  profiles?: Profiles; // each twin's persona (replays saved after profiles were added, or backfilled)
+  matched?: string[] | null; // her real matches: the answer key
   events: FeedEvent[];
   twin_states: TwinState[];
 };
@@ -123,6 +126,8 @@ type Simulation = {
   wall_seconds?: number;
   ranking?: Ranked[];
   woman?: string;
+  profiles?: Profiles;
+  matched?: string[];
   answer_key?: {
     matched: string[];
     matches_on_top: boolean;
@@ -218,6 +223,8 @@ export default function Home() {
   const [featuredRun, setFeaturedRun] = useState<string | null>(null);
   const [twinNames, setTwinNames] = useState<string[]>([]);
   const [her, setHer] = useState<string | null>(null); // her twin: the log follows her days
+  const [profiles, setProfiles] = useState<Profiles>({}); // each twin's persona, for the profile cards
+  const [matched, setMatched] = useState<string[] | null>(null); // her real matches, when the pool has them
   const [simId, setSimId] = useState<string | null>(null);
   const [twinStates, setTwinStates] = useState<TwinState[]>([]); // every evening, for the panel
   const [selected, setSelected] = useState<string | null>(null);
@@ -318,6 +325,8 @@ export default function Home() {
     setFeaturedRun(null);
     setTwinNames([]);
     setHer(null);
+    setProfiles({});
+    setMatched(null);
     setSimId(null);
     setTwinStates([]);
     setSelected(null);
@@ -349,6 +358,8 @@ export default function Home() {
       setFeaturedRun(r.run_id);
       setTwinNames(r.twins);
       setHer(r.woman ?? null);
+      setProfiles(r.profiles ?? {});
+      setMatched(r.matched ?? null);
       setFeedEvents(r.events);
       setTwinStates(r.twin_states);
       showView(`replay:${key}`); // choosing the same run again restarts it
@@ -398,6 +409,8 @@ export default function Home() {
     setFeaturedRun(record.featured_run ?? null);
     setTwinNames(record.twins ?? []);
     setHer(record.woman ?? null);
+    setProfiles(record.profiles ?? {});
+    setMatched(record.matched ?? null);
     setSimId(record.id);
     showView(`live:${record.id}`);
     window.history.replaceState(null, "", `?sim=${record.id}`);
@@ -590,11 +603,32 @@ export default function Home() {
           )}
           {her && feedEvents.length > 0 && <SyncPanel events={feedEvents} her={her} atSeq={progress.seq} />}
           {selected ? (
-            <TwinPanel twin={selected} state={panelState(selected)} onClose={() => setSelected(null)} />
+            <TwinPanel
+              twin={selected}
+              state={panelState(selected)}
+              profile={profiles[selected]}
+              onClose={() => setSelected(null)}
+            />
           ) : (
             <p className="meta">Click a twin to see how they&apos;re doing.</p>
           )}
         </section>
+      )}
+
+      {twinNames.length > 0 && (
+        <TwinRoster
+          twins={twinNames}
+          profiles={profiles}
+          her={her}
+          matched={matched}
+          selected={selected}
+          onSelect={(twin) => {
+            setSelected(twin);
+            requestAnimationFrame(() =>
+              document.querySelector("[data-testid=twin-panel]")?.scrollIntoView({ block: "nearest", behavior: "smooth" }),
+            );
+          }}
+        />
       )}
 
       {her && playedEvents.length > 0 && (

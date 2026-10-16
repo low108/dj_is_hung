@@ -79,6 +79,30 @@ class TwinRecord:
         return "\n".join(m.text for m in self.memories)
 
 
+# What a persona line is about, from the dataset field it came from (for the viewer's profile cards).
+ABOUT = {"age": "age", "field": "studies", "career": "career", "from": "home", "goal": "why I'm here",
+         "date": "dating", "go_out": "going out", "imprelig": "must share", "imprace": "must share"}
+
+
+def about(memory: Memory) -> str:
+    """'loves', 'wants in a partner', 'studies'...: what one persona line is about."""
+    first = memory.source.split(",")[0]
+    if first in ABOUT:
+        return ABOUT[first]
+    if first.endswith("1_1"):
+        return "wants in a partner"
+    if first.endswith("3_1"):
+        return "sees self as"
+    if first in INTERESTS:
+        return "not for me" if memory.text.startswith("I don't") else "loves"
+    return "about me"
+
+
+def profile_entries(record: "TwinRecord") -> list[dict]:
+    """A twin's persona as the viewer shows it: each line and what it's about."""
+    return [{"text": m.text, "about": about(m)} for m in record.memories]
+
+
 def _num(p: dict, key: str) -> float | None:
     v = p.get(key)
     try:

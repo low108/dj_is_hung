@@ -90,6 +90,8 @@ class SimulationInfo:
     scenario: str | None  # the fake-model scenario; None for real models
     featured_run: str | None
     created_at: str      # the simulation's, so its runs sort together in the picker
+    profiles: dict[str, list[dict]] | None = None  # each twin's persona, for the viewer's profile cards
+    matched: list[str] | None = None  # her real matches (the answer key), when the pool has one
 
 
 def replay_of(info: SimulationInfo, record: RunRecord, recorder: Recorder) -> dict | None:
@@ -102,6 +104,7 @@ def replay_of(info: SimulationInfo, record: RunRecord, recorder: Recorder) -> di
         "seed": spec.seed, "scenario": info.scenario, "featured": spec.run_id == info.featured_run,
         **outcome_fields(record.result), "created_at": info.created_at,
         "twins": info.twins, "woman": info.woman, "events": recorder.events, "twin_states": recorder.twin_states,
+        "profiles": info.profiles or {}, "matched": info.matched,
     }
 
 

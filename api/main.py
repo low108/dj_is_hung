@@ -161,6 +161,9 @@ def create_app(store: Store | None = None, log_runs: bool = False,
         record["featured_run"] = featured.run_id if featured else None
         record["twins"] = [t.alias for t in twins]  # the viewer places sprites before any event arrives
         record["woman"] = woman  # whose days the viewer follows
+        record["profiles"] = pool.profiles_or_personas()  # each twin's persona, for the profile cards
+        if pool.matched is not None:
+            record["matched"] = sorted(pool.matched)
         if couple is not None:  # the couples answer key: her real partner, and how happy they are
             record["couple"] = {"id": req.couple_id, "partner": couple.partner,
                                 "satisfaction": {"her": couple.satisfaction[0], "him": couple.satisfaction[1]}}
@@ -169,7 +172,8 @@ def create_app(store: Store | None = None, log_runs: bool = False,
 
         info = replay.SimulationInfo(sim_id, record["twins"], woman,
                                      scenario=req.scenario if all(demo.is_fake(m) for m in models) else None,
-                                     featured_run=record["featured_run"], created_at=record["created_at"])
+                                     featured_run=record["featured_run"], created_at=record["created_at"],
+                                     profiles=record["profiles"], matched=record.get("matched"))
 
         def stream(events: list[dict], states: list[dict]) -> None:
             if events:

@@ -1,5 +1,7 @@
 "use client";
 
+import { ProfileList, type ProfileLine } from "./Profiles";
+
 /** What the viewer knows about a twin at its latest evening (GET /simulations/{id}/twins). */
 export type TwinState = {
   day: number;
@@ -20,12 +22,20 @@ function timeLeft(daysLeft: number | null): string {
 export default function TwinPanel({
   twin,
   state,
+  profile = [],
   onClose,
 }: {
   twin: string;
   state: TwinState | undefined;
+  profile?: ProfileLine[];
   onClose: () => void;
 }) {
+  const persona = profile.length > 0 && (
+    <details className="twin-persona" open>
+      <summary>Who {twin} is</summary>
+      <ProfileList lines={profile} />
+    </details>
+  );
   if (!state)
     return (
       <aside className="twin-panel" data-testid="twin-panel">
@@ -35,6 +45,7 @@ export default function TwinPanel({
             ✕
           </button>
         </header>
+        {persona}
         <p className="meta">Nothing to report until the first evening.</p>
       </aside>
     );
@@ -47,6 +58,7 @@ export default function TwinPanel({
           ✕
         </button>
       </header>
+      {persona}
       <p className="meta">As of the evening of day {state.day}</p>
       <dl>
         <dt>Partner</dt>

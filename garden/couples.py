@@ -178,4 +178,6 @@ def setup(couple: int, data: pd.DataFrame | None = None):
     pool = load_pool(load() if data is None else data, couple)
     twins = (Twin(pool.woman.alias, "f"), *(Twin(m.alias, "m") for m in pool.men))
     personas = {p.alias: p.persona_text() for p in (pool.woman, *pool.men)}
-    return PoolSetup(twins, personas, pool.woman.alias, [m.alias for m in pool.men], frozenset({pool.partner})), pool
+    profiles = {p.alias: [{"text": m, "about": "personality"} for m in p.memories] for p in (pool.woman, *pool.men)}
+    return PoolSetup(twins, personas, pool.woman.alias, [m.alias for m in pool.men], frozenset({pool.partner}),
+                     profiles), pool

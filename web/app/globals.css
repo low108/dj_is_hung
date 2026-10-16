@@ -824,3 +824,104 @@ details.feed summary {
     aspect-ratio: 1 / 1;
   }
 }
+
+/* The twins: one profile card each, from what the twin was told about themselves. */
+.roster {
+  margin-top: 16px;
+}
+.roster-grid {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+.twin-card {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  height: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.twin-card:hover,
+.twin-card.on {
+  border-color: var(--accent);
+  box-shadow: 0 2px 10px #0000000f;
+}
+.twin-card.her {
+  background: var(--hers);
+}
+.twin-avatar {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-weight: 700;
+}
+.twin-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.twin-card-name {
+  font-weight: 700;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+.twin-card-line {
+  font-size: 13px;
+  color: var(--muted);
+}
+.badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+.badge.her {
+  background: var(--accent);
+  color: #fff;
+}
+.badge.match {
+  background: var(--hot);
+  color: var(--text);
+}
+.twin-persona {
+  margin: 6px 0 8px;
+}
+.twin-persona summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.profile-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.profile-list li {
+  display: flex;
+  gap: 8px;
+  line-height: 1.35;
+}
+.profile-icon {
+  flex: none;
+  width: 18px;
+  text-align: center;
+}

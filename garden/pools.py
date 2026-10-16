@@ -118,6 +118,14 @@ class PoolSetup:
     woman: str
     men: list[str]
     matched: frozenset[str] | None  # the answer key; None for the demo pool
+    profiles: dict[str, list[dict]] | None = None  # alias -> persona lines with what each is about (viewer)
+
+    def profiles_or_personas(self) -> dict[str, list[dict]]:
+        """Profiles for the viewer; pools without tagged lines show each persona line as 'about me'."""
+        if self.profiles:
+            return self.profiles
+        return {a: [{"text": line, "about": "about me"} for line in text.splitlines() if line.strip()]
+                for a, text in self.personas.items()}
 
 
 def resolve(pool_iid: int | None, dates: Callable[[], pd.DataFrame] = sd.load, non_matches: int = 3) -> PoolSetup:
@@ -128,4 +136,5 @@ def resolve(pool_iid: int | None, dates: Callable[[], pd.DataFrame] = sd.load, n
     if pool_iid is None:
         return PoolSetup(demo.POOL, demo.PERSONAS, demo.WOMAN, demo.MEN, None)
     pool = load_pool(dates(), pool_iid, non_matches=non_matches)
-    return PoolSetup(pool.twins, pool.personas, pool.woman.alias, pool.men_aliases, pool.matched)
+    profiles = {r.alias: sd.profile_entries(r) for r in (pool.woman, *pool.men)}
+    return PoolSetup(pool.twins, pool.personas, pool.woman.alias, pool.men_aliases, pool.matched, profiles)
