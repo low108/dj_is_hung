@@ -6,7 +6,8 @@
     "dev": "next dev --turbopack",
     "build": "next build --turbopack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "export": "STATIC_EXPORT=1 next build"
   },
   "dependencies": {
     "easystarjs": "^0.4.4",

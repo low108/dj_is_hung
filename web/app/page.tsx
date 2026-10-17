@@ -187,6 +187,19 @@ const SHOWN_REPLAYS = new Set(DEMO_REPLAYS.split(",").map((s) => s.trim()));
 const showReplay = (r: { sim_id: string; run_id: string }) =>
   DEMO_REPLAYS === "all" || SHOWN_REPLAYS.has(`${r.sim_id}/${r.run_id}`);
 
+// Sign-in (your own twin) needs a real Firebase project; the public demo turns it off with NEXT_PUBLIC_SIGN_IN=off.
+const SIGN_IN = (process.env.NEXT_PUBLIC_SIGN_IN ?? "on").trim() !== "off";
+// The models the Model menu offers. NEXT_PUBLIC_LIVE_MODELS narrows it ("fake,ilmu:ilmu-mini-v3.3"); unset = all.
+const MODELS: [string, string][] = [
+  ["fake", "Scripted (instant)"],
+  ["ilmu:ilmu-mini-v3.3", "ILMU (real, one run)"],
+  ["gemini:gemini-3.5-flash", "Gemini Flash (real)"],
+  ["gemma:gemma-4-26b-a4b-it", "Gemma 4 (real)"],
+  ["ensemble", "Three models: Gemini Pro, Flash and Gemma (real)"],
+];
+const LIVE_MODELS = process.env.NEXT_PUBLIC_LIVE_MODELS?.split(",").map((s) => s.trim());
+const SHOWN_MODELS = LIVE_MODELS ? MODELS.filter(([m]) => LIVE_MODELS.includes(m)) : MODELS;
+
 export default function Home() {
   const [scenario, setScenario] = useState<Scenario>("breakout");
   const [poolIid, setPoolIid] = useState<string>(DEFAULT_POOL);
@@ -196,7 +209,7 @@ export default function Home() {
   // A signed-in user with a twin can put her twin in the Garden ("My twin" pool).
   const [user, setUser] = useState<User | null>(null);
   const [myTwin, setMyTwin] = useState<{ alias: string; reviewed: boolean } | null>(null);
-  useEffect(() => onAuthStateChanged(firebaseAuth(), setUser), []);
+  useEffect(() => (SIGN_IN ? onAuthStateChanged(firebaseAuth(), setUser) : undefined), []);
   useEffect(() => {
     setMyTwin(null);
     if (!user) return;
@@ -401,10 +414,13 @@ export default function Home() {
           background: true,
           my_twin: mine,
           pool_iid: poolIid && !mine ? Number(poolIid) : null,
-          ...(model === "fake" ? {} : { models: [model] }),
+          ...(model === "fake" ? {} : { models: [model], seeds: [0] }), // a live real run is one run
         }),
       });
-      if (!res.ok) throw new Error(`API returned ${res.status}`);
+      if (!res.ok) {
+        const detail = await res.json().catch(() => null);
+        throw new Error(detail?.detail ?? `API returned ${res.status}`);
+      }
       const started: Simulation = await res.json();
       await watch(started);
     } catch (e) {
@@ -471,9 +487,11 @@ export default function Home() {
     <main className="page">
       <h1>The Garden</h1>
       <p className="lede">Twins live in the Garden. The men her twin will give up the most for come first.</p>
-      <p className="meta">
-        <Link href="/onboarding">Build your own twin →</Link>
-      </p>
+      {SIGN_IN && (
+        <p className="meta">
+          <Link href="/onboarding">Build your own twin →</Link>
+        </p>
+      )}
 
       <div className="controls">
         <label>
@@ -495,11 +513,11 @@ export default function Home() {
         <label>
           Twins{" "}
           <select value={model} onChange={(e) => setModel(e.target.value)}>
-            <option value="fake">Scripted (instant)</option>
-            <option value="ilmu:ilmu-mini-v3.3">ILMU (real, a few minutes)</option>
-            <option value="gemini:gemini-3.5-flash">Gemini Flash (real)</option>
-            <option value="gemma:gemma-4-26b-a4b-it">Gemma 4 (real)</option>
-            <option value="ensemble">Three models: Gemini Pro, Flash and Gemma (real)</option>
+            {SHOWN_MODELS.map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
           </select>
         </label>
         <label>

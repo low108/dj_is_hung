@@ -85,3 +85,10 @@ The free tier allows about 5 requests per minute and 20 per day per model, which
 `web/app/garden/` draws the Garden with Phaser 3 (shapes in code, no third-party tileset or sprites, so there is no art licence to track) and walks twins between places with EasyStar.js pathfinding. It plays the featured run's feed events in order, live or after the fact. Libraries: Phaser 3.90.0 (MIT), EasyStar.js 0.4.4 (MIT).
 
 **Build your own twin** (`/onboarding`): sign in (locally the Auth emulator offers fake accounts), consent, then answer 15 questions one per screen; a short answer gets one follow-up from Gemini Flash (a template follow-up when no `GEMINI_API_KEY` is set). Progress is saved, so you can leave and resume.
+
+## Public demo deploy
+
+`PROJECT=<gcp-project> scripts/deploy.sh` puts the API on Cloud Run (one always-on instance; scripted
+twins, plus one ILMU run at a time, via `ALLOWED_MODELS`, `MAX_REAL_SIMS`, `MAX_REAL_RUNS`) and the web
+app on Firebase Hosting as static files, with sign-in off and only the demo replay listed. The image
+holds the code, the speed-dating CSV and the demo replay, and stays private to the project.

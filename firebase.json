@@ -14,5 +14,13 @@
       "port": 4000
     },
     "singleProjectMode": true
+  },
+  "hosting": {
+    "public": "web/.next-export",
+    "cleanUrls": true,
+    "ignore": [
+      "firebase.json",
+      "**/.*"
+    ]
   }
 }

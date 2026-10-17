@@ -89,6 +89,44 @@ def serialize_simulation(sim: Simulation, pool: pool_lib.PoolSetup, highlight_mo
             "result": runs[0]["result"] if runs else None}  # first run kept for the single-result page
 
 
+class LiveLimits:
+    """Guards a public deployment's API credits. Scripted models are always allowed. From the environment:
+    ALLOWED_MODELS (comma list of real models; unset = any), MAX_REAL_SIMS (real simulations running at
+    once; unset = no limit), MAX_REAL_RUNS (runs in one real simulation; unset = no limit)."""
+
+    def __init__(self, allowed: set[str] | None = None, max_sims: int | None = None, max_runs: int | None = None):
+        self.allowed, self.max_sims, self.max_runs = allowed, max_sims, max_runs
+        self._running: list[str] = []
+        self._lock = threading.Lock()
+
+    @classmethod
+    def from_env(cls) -> "LiveLimits":
+        num = lambda k: int(os.environ[k]) if os.environ.get(k) else None  # noqa: E731
+        allowed = os.environ.get("ALLOWED_MODELS")
+        return cls({m.strip() for m in allowed.split(",") if m.strip()} if allowed else None,
+                   num("MAX_REAL_SIMS"), num("MAX_REAL_RUNS"))
+
+    def admit(self, models: list[str], runs: int, sim_id: str) -> None:
+        if all(demo.is_fake(m) for m in models):
+            return
+        if self.allowed is not None:
+            refused = [m for m in models if not demo.is_fake(m) and m not in self.allowed]
+            if refused:
+                raise HTTPException(403, f"this server doesn't run {', '.join(refused)}")
+        if self.max_runs is not None and runs > self.max_runs:
+            raise HTTPException(400, f"at most {self.max_runs} run(s) per live simulation here")
+        with self._lock:
+            if self.max_sims is not None and len(self._running) >= self.max_sims:
+                raise HTTPException(429, f"a live simulation is already running: open ?sim={self._running[0]} "
+                                         "to watch it, or try the scripted model")
+            self._running.append(sim_id)
+
+    def release(self, sim_id: str) -> None:
+        with self._lock:
+            if sim_id in self._running:
+                self._running.remove(sim_id)
+
+
 def create_app(store: Store | None = None, log_runs: bool = False,
                replay_dir: Path | None = None, verify_token: TokenVerifier | None = None,
                followup_model: Callable[[], TextModel | None] | None = None,
@@ -117,6 +155,7 @@ def create_app(store: Store | None = None, log_runs: bool = False,
     )
 
     app.state.dates = None
+    limits = LiveLimits.from_env()
 
     def dates():
         if app.state.dates is None:
@@ -136,6 +175,7 @@ def create_app(store: Store | None = None, log_runs: bool = False,
         sim_id = uuid.uuid4().hex[:12]
         models = list(llm.ENSEMBLE) if req.models == [demo.ENSEMBLE_ALIAS] else req.models
         specs = plan(models, req.seeds)
+        real = not all(demo.is_fake(m) for m in models)
         couple = None
         if req.my_twin:
             pool = demo.with_her_twin(*tb.garden_inputs(twin.reviewed_twin(request, current_user(request))))
@@ -167,6 +207,8 @@ def create_app(store: Store | None = None, log_runs: bool = False,
         if couple is not None:  # the couples answer key: her real partner, and how happy they are
             record["couple"] = {"id": req.couple_id, "partner": couple.partner,
                                 "satisfaction": {"her": couple.satisfaction[0], "him": couple.satisfaction[1]}}
+        if real:  # taken last, so nothing above can fail and leave the slot taken
+            limits.admit(models, len(specs), sim_id)
         app.state.store.save(sim_id, record)
         store = app.state.store
 
@@ -204,6 +246,9 @@ def create_app(store: Store | None = None, log_runs: bool = False,
                 if not req.background:
                     raise
                 return failed
+            finally:
+                if real:
+                    limits.release(sim_id)
 
         def highlight_model():
             try:
