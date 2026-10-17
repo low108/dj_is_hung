@@ -26,7 +26,7 @@ deploy_api() {
   # lost between requests (simulations are kept in memory).
   gcloud run deploy "$SERVICE" --project "$PROJECT" --region "$REGION" --source "$ctx" \
     --allow-unauthenticated --min-instances 1 --max-instances 1 --no-cpu-throttling \
-    --cpu 2 --memory 4Gi --timeout 300 \
+    --cpu 1 --memory 2Gi --timeout 300 \
     --set-secrets "ILMU_API_KEY=ilmu-api-key:latest" \
     --set-env-vars "^@^ALLOWED_MODELS=ilmu:ilmu-mini-v3.3@MAX_REAL_SIMS=1@MAX_REAL_RUNS=1@CORS_ORIGINS=https://$PROJECT.web.app,https://$PROJECT.firebaseapp.com"
 }
