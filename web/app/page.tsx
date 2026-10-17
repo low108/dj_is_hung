@@ -200,6 +200,12 @@ const MODELS: [string, string][] = [
 const LIVE_MODELS = process.env.NEXT_PUBLIC_LIVE_MODELS?.split(",").map((s) => s.trim());
 const SHOWN_MODELS = LIVE_MODELS ? MODELS.filter(([m]) => LIVE_MODELS.includes(m)) : MODELS;
 
+// NEXT_PUBLIC_API_URL=static: a site with no API (the free public demo). The saved runs are files shipped
+// with the site (demo/replays.json and demo/replays/<sim>/<run>.json), and nothing can be simulated.
+const STATIC = API_URL === "static";
+const replaysUrl = (key?: string) =>
+  STATIC ? `/demo/replays${key ? `/${key}` : ""}.json` : `${API_URL}/replays${key ? `/${key}` : ""}`;
+
 export default function Home() {
   const [scenario, setScenario] = useState<Scenario>("breakout");
   const [poolIid, setPoolIid] = useState<string>(DEFAULT_POOL);
@@ -228,6 +234,7 @@ export default function Home() {
   }, [myTwin]);
 
   useEffect(() => {
+    if (STATIC) return;
     fetch(`${API_URL}/pools`)
       .then((r) => (r.ok ? r.json() : []))
       .then((all: { iid: number; matches: number; dates: number }[]) =>
@@ -263,11 +270,12 @@ export default function Home() {
 
   async function loadReplays() {
     try {
-      const res = await fetch(`${API_URL}/replays`);
+      const res = await fetch(replaysUrl());
       if (res.ok) {
         const saved = ((await res.json()) as ReplaySummary[]).filter(showReplay);
         setReplays(saved);
         if (DEMO_REPLAYS !== "all" && saved.length) setPicked((p) => p || replayKey(saved[0]));
+        if (STATIC && saved.length) playReplay(replayKey(saved[0])); // the demo starts playing on its own
       }
     } catch {
       setReplays([]);
@@ -275,6 +283,7 @@ export default function Home() {
   }
   useEffect(() => {
     loadReplays();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on load
   }, []);
 
   function clearToasts() {
@@ -373,7 +382,7 @@ export default function Home() {
     const request = ++replayRequest.current;
     resetView();
     try {
-      const res = await fetch(`${API_URL}/replays/${key}`);
+      const res = await fetch(replaysUrl(key));
       if (!res.ok) throw new Error(`API returned ${res.status} for replay ${key}`);
       const r: Replay = await res.json();
       if (request !== replayRequest.current) return; // a newer pick or a live run took over
@@ -493,6 +502,7 @@ export default function Home() {
         </p>
       )}
 
+      {!STATIC && (
       <div className="controls">
         <label>
           Pool{" "}
@@ -533,6 +543,7 @@ export default function Home() {
           {busy ? "Simulating…" : "Start simulation"}
         </button>
       </div>
+      )}
 
       <div className="controls replays">
         {(
@@ -581,7 +592,7 @@ export default function Home() {
 
       {error && (
         <p className="error">
-          Couldn&apos;t reach the API at {API_URL}: {error}
+          {STATIC ? "Couldn't load the saved run" : `Couldn't reach the API at ${API_URL}`}: {error}
         </p>
       )}
 

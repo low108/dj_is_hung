@@ -2,6 +2,7 @@
 # Deploys the public demo: the API to Cloud Run, the web app to Firebase Hosting.
 #   PROJECT=my-project scripts/deploy.sh          # both
 #   PROJECT=my-project scripts/deploy.sh api|web  # one
+#   PROJECT=my-project scripts/deploy.sh static   # the website alone, no API and no billing: plays the demo replay
 # Needs: gcloud (logged in, billing on), the ILMU key in Secret Manager as "ilmu-api-key", and
 # `npx firebase-tools login`. Live runs are limited: scripted twins, plus one ILMU run at a time.
 set -euo pipefail
@@ -38,9 +39,20 @@ deploy_web() {
   (cd "$ROOT" && npx -y firebase-tools@14 deploy --only hosting --project "$PROJECT")
 }
 
+build_static() {
+  (cd "$ROOT/web" && NEXT_PUBLIC_API_URL=static NEXT_PUBLIC_SIGN_IN=off NEXT_PUBLIC_DEMO_REPLAYS="$DEMO_REPLAY" npm run export)
+  local out="$ROOT/web/.next-export/demo/replays"
+  mkdir -p "$out/${DEMO_REPLAY%/*}"
+  cp "$ROOT/data/replays/$DEMO_REPLAY.json" "$out/${DEMO_REPLAY%/*}/"
+  python3 -c 'import json,sys; print(json.dumps([json.load(open(sys.argv[1]))]))' \
+    "$ROOT/data/replays/$DEMO_REPLAY.summary.json" > "$out.json"
+}
+
 case "$what" in
   api) deploy_api ;;
   web) deploy_web ;;
   all) deploy_api; deploy_web ;;
-  *) echo "usage: scripts/deploy.sh [api|web|all]" >&2; exit 2 ;;
+  static) build_static; (cd "$ROOT" && npx -y firebase-tools@14 deploy --only hosting --project "$PROJECT") ;;
+  build-static) build_static ;;
+  *) echo "usage: scripts/deploy.sh [api|web|all|static|build-static]" >&2; exit 2 ;;
 esac
