@@ -10,7 +10,7 @@ import Timeline, { isWallCrossing } from "./garden/Timeline";
 import SyncPanel from "./garden/SyncPanel";
 import TwinPanel, { type TwinState } from "./garden/TwinPanel";
 import TwinRoster, { type Profiles } from "./garden/Profiles";
-import { API_URL, ApiError, authedFetch, firebaseAuth } from "./firebase";
+import { API_URL, ApiError, STATIC, authedFetch, firebaseAuth } from "./firebase";
 
 // Phaser touches `window`, so the map only loads in the browser.
 const GardenMap = dynamic(() => import("./garden/GardenMap"), { ssr: false });
@@ -200,9 +200,8 @@ const MODELS: [string, string][] = [
 const LIVE_MODELS = process.env.NEXT_PUBLIC_LIVE_MODELS?.split(",").map((s) => s.trim());
 const SHOWN_MODELS = LIVE_MODELS ? MODELS.filter(([m]) => LIVE_MODELS.includes(m)) : MODELS;
 
-// NEXT_PUBLIC_API_URL=static: a site with no API (the free public demo). The saved runs are files shipped
-// with the site (demo/replays.json and demo/replays/<sim>/<run>.json), and nothing can be simulated.
-const STATIC = API_URL === "static";
+// With no API (STATIC) the saved runs are files shipped with the site (demo/replays.json and
+// demo/replays/<sim>/<run>.json), and nothing can be simulated.
 const replaysUrl = (key?: string) =>
   STATIC ? `/demo/replays${key ? `/${key}` : ""}.json` : `${API_URL}/replays${key ? `/${key}` : ""}`;
 
@@ -496,9 +495,9 @@ export default function Home() {
     <main className="page">
       <h1>The Garden</h1>
       <p className="lede">Twins live in the Garden. The men her twin will give up the most for come first.</p>
-      {SIGN_IN && (
+      {(SIGN_IN || STATIC) && (
         <p className="meta">
-          <Link href="/onboarding">Build your own twin →</Link>
+          <Link href="/onboarding">{STATIC ? "Tell your twin about you →" : "Build your own twin →"}</Link>
         </p>
       )}
 

@@ -10,9 +10,10 @@ import {
 } from "firebase/auth";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ApiError, authedFetch, firebaseAuth } from "../firebase";
+import { ApiError, STATIC, authedFetch, firebaseAuth } from "../firebase";
 import TwinReview, { type TwinSummary } from "./TwinReview";
 import AboutYou, { type About } from "./AboutYou";
+import { facts, type AboutRules } from "./aboutLocal";
 
 /** GET /me/onboarding: where the user is, so they can resume where they left off. */
 type Progress = {
@@ -27,6 +28,41 @@ type Progress = {
 };
 
 export default function Onboarding() {
+  return STATIC ? <AboutYouDemo /> : <BuildYourTwin />;
+}
+
+/** The public demo has no API: the About you forms alone, worked out in the browser and never saved. */
+function AboutYouDemo() {
+  const [rules, setRules] = useState<AboutRules | null>(null);
+  const [about, setAbout] = useState<About["about"]>({});
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    fetch("/demo/about.json")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`about.json returned ${r.status}`))))
+      .then(setRules)
+      .catch((e) => setError(e.message));
+  }, []);
+  const status = { profile: !!about.profile, personality: !!about.personality, preferences: !!about.preferences };
+  return (
+    <main className="page onboarding">
+      <p className="meta">
+        <Link href="/">← The Garden</Link>
+      </p>
+      <h1>Tell your twin about you</h1>
+      <p className="meta">A demo: nothing leaves your browser. Signing in and the full interview need the live server.</p>
+      {rules && (
+        <AboutYou
+          about={{ form: rules.form, about, status, facts: facts(about, rules) }}
+          busy={false}
+          onSave={(part, body) => setAbout((a) => ({ ...a, [part]: body }))}
+        />
+      )}
+      {error && <p className="error">{error}</p>}
+    </main>
+  );
+}
+
+function BuildYourTwin() {
   const [user, setUser] = useState<User | null | undefined>(undefined); // undefined: still checking
   const [progress, setProgress] = useState<Progress | null>(null);
   const [draft, setDraft] = useState("");

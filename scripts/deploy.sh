@@ -46,6 +46,10 @@ build_static() {
   cp "$ROOT/data/replays/$DEMO_REPLAY.json" "$out/${DEMO_REPLAY%/*}/"
   python3 -c 'import json,sys; print(json.dumps([json.load(open(sys.argv[1]))]))' \
     "$ROOT/data/replays/$DEMO_REPLAY.summary.json" > "$out.json"
+  # The About you forms' wording and scoring rules, for the in-browser demo (web/app/onboarding/aboutLocal.ts)
+  (cd "$ROOT" && uv run python -c 'import json; from garden import about_me as a; print(json.dumps({"form": a.form(),
+    "items": {i: {"trait": t, "reverse": r} for i, _, t, r in a.MINI_IPIP}, "says": a.SAYS, "high": a.HIGH, "low": a.LOW}))') \
+    > "$ROOT/web/.next-export/demo/about.json"
 }
 
 case "$what" in
