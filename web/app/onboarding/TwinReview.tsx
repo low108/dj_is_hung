@@ -14,8 +14,9 @@ export type TwinSummary = {
   rebelliousness: number;
   traits_edited: string[];
   rebelliousness_because: { question: string; answer: string }[];
-  threshold: number;
+  rebel_memory: string; // how her twin sees rules, in its own words ("" in the middle of the scale)
   memory_count: number;
+  about?: { text: string; about: string }[]; // facts from the About-you forms, as the twin knows them
 };
 
 export type TraitEdit = Partial<Pick<TwinSummary, "attachment_style" | "values" | "dealbreakers" | "rebelliousness">>;
@@ -62,6 +63,17 @@ export default function TwinReview({
         Others only ever see the alias {twin.alias}. Change anything that doesn&apos;t sound like you: your words
         and choices replace what was drawn from your answers.
       </p>
+      {twin.about && twin.about.length > 0 && (
+        <div className="twin-section">
+          <h3>From your About-you forms</h3>
+          <p className="meta">Change these in the forms above, then rebuild.</p>
+          <ul className="about-list">
+            {twin.about.map((f) => (
+              <li key={f.text}>{f.text}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       {twin.sections.map((s) => (
         <div key={s.id} className="twin-section">
           <h3>
@@ -130,6 +142,11 @@ export default function TwinReview({
             ))}
           </select>
         </label>
+        {twin.rebel_memory && (
+          <p className="meta">
+            Your twin remembers: <q>{twin.rebel_memory}</q>
+          </p>
+        )}
         {twin.rebelliousness_because.length > 0 && (
           <div className="meta because">
             Read from what you said:

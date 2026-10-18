@@ -54,14 +54,16 @@ def test_a_breakout_day_still_gets_a_final_snapshot_with_standing_gone():
     from garden import Action as A
 
     script = {("Mara", 2): A(Rung.GO_BEYOND_WALL, "Ren"), ("Ren", 2): A(Rung.GO_BEYOND_WALL, "Mara")}
-    states = snapshots(script)
+    states = []
+    run_world(WorldConfig(WORLD[:2], max_days=5, seed=1, wall_lock=False), ScriptedModel(script),
+              on_state=states.append)
     last = {s.twin: s for s in states[-1]}
     assert states[-1][0].day == 2 and "no standing" in last["Mara"].standing.lower()
 
 
-def test_reflections_that_break_immersion_are_not_shown():
+def test_reflections_that_slip_out_of_character_are_not_shown():
     out = []
-    model = ScriptedModel({}, reflections={("Mara", 1): "This is all an experiment."})
+    model = ScriptedModel({}, reflections={("Mara", 1): "As a language model I have no feelings."})
     run_world(WorldConfig(WORLD, max_days=2, seed=1), model, on_state=out.append)
     assert all(s.reflection == "" for day in out for s in day if s.twin == "Mara")
 

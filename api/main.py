@@ -12,13 +12,13 @@ from typing import Literal, Protocol
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from garden import agreement, demo, highlights, llm, replay
+from garden import agreement, couples, demo, highlights, llm, replay
 from garden import twin_builder as tb
 from garden import pools as pool_lib
 from garden import speed_dating as sd
-from garden.batch import PriceLevel, Simulation, featured_spec, plan, run_simulation
+from garden.batch import Simulation, featured_spec, plan, run_simulation
 from garden.runlog import write_simulation
 from garden.scoring import score
 
@@ -34,14 +34,15 @@ class TextModel(Protocol):
 
 
 class StartSimulation(BaseModel):
-    """models x price levels x seeds runs. 'fake:*' models are scripted (no API calls)."""
+    """models x seeds runs. 'fake:*' models are scripted (no API calls)."""
 
-    scenario: Literal["breakout", "unrequited", "timeout", "excluded"] = "breakout"  # for fake models
+    scenario: Literal["breakout", "unrequited", "timeout", "flagged"] = "breakout"  # for fake models
     models: list[str] = demo.FAKE_MODELS  # scripted stand-ins; [demo.ENSEMBLE_ALIAS] = the real ensemble
-    prices: list[PriceLevel] = list(PriceLevel)
     seeds: list[int] = [0, 1]
-    max_days: int = 10
+    max_days: int | None = None  # a safety cap; a run ends when every man has had his dates (or a breakout)
     pool_iid: int | None = None  # a real speed-dating woman (see GET /pools); None = placeholder demo pool
+    pool_non_matches: int = Field(3, ge=1, le=10)  # men in her pool she didn't match with (chance = matches / men)
+    couple_id: int | None = None  # a real couple (garden/couples.py): her twin, her partner's, 6 men from other couples
     my_twin: bool = False  # the signed-in user's own twin as the woman, with the demo pool's men (D4)
     background: bool = False  # True: return at once and stream the featured run's events (the web app)
 
@@ -53,8 +54,6 @@ def serialize(result) -> dict:
         "standing": result.standing,
         "longing": {who: {n: round(v, 2) for n, v in d.items()} for who, d in result.longing.items()},
         "announcements": [{"day": a.day, "text": a.text} for a in result.announcements],
-        "verdicts": [{"day": v.day, "twin": v.twin, "score": v.score, "threshold": v.threshold,
-                      "permitted": v.permitted} for v in result.verdicts],
         "reflections": [{"day": r.day, "twin": r.twin, "text": r.text, "ratings": r.ratings}
                         for r in result.reflections],
         "events": [
@@ -70,13 +69,12 @@ def serialize_simulation(sim: Simulation, pool: pool_lib.PoolSetup, highlight_mo
     woman, men, matched = pool.woman, pool.men, pool.matched
     scores = score(list(sim.records), woman, men)
     picked = highlights.for_simulation(list(sim.records), scores, woman, pool.personas, highlight_model)
-    runs = [{"run_id": r.spec.run_id, "model": r.spec.model, "price": r.spec.price.value, "seed": r.spec.seed,
+    runs = [{"run_id": r.spec.run_id, "model": r.spec.model, "seed": r.spec.seed,
              "wall_seconds": round(r.wall_seconds, 2), "error": r.error,
              "result": serialize(r.result) if r.result else None} for r in sim.records]
-    ranking = [{"candidate": c.candidate, "price": c.price.value if c.price else None, "breakouts": c.breakouts,
-                "runs": c.runs, "ci_low": c.ci_low, "ci_high": c.ci_high,
-                "by_price": {p: list(v) for p, v in c.breakouts_by_price.items()}}
-               for c in scores]
+    ranking = [{"candidate": c.candidate, "chosen": c.chosen, "breakouts": c.breakouts, "runs": c.runs,
+                "rate": round(c.rate, 3),
+                "ci_low": c.ci_low, "ci_high": c.ci_high} for c in scores]
     answer_key = None
     if matched is not None:
         check = pool_lib.check_ranking(scores, matched)
@@ -89,6 +87,44 @@ def serialize_simulation(sim: Simulation, pool: pool_lib.PoolSetup, highlight_mo
             "models": sorted({r.spec.model for r in sim.records}),
             "agreement": [a.to_dict() for a in agreement.agreement(list(sim.records), scores, woman, men)],
             "result": runs[0]["result"] if runs else None}  # first run kept for the single-result page
+
+
+class LiveLimits:
+    """Guards a public deployment's API credits. Scripted models are always allowed. From the environment:
+    ALLOWED_MODELS (comma list of real models; unset = any), MAX_REAL_SIMS (real simulations running at
+    once; unset = no limit), MAX_REAL_RUNS (runs in one real simulation; unset = no limit)."""
+
+    def __init__(self, allowed: set[str] | None = None, max_sims: int | None = None, max_runs: int | None = None):
+        self.allowed, self.max_sims, self.max_runs = allowed, max_sims, max_runs
+        self._running: list[str] = []
+        self._lock = threading.Lock()
+
+    @classmethod
+    def from_env(cls) -> "LiveLimits":
+        num = lambda k: int(os.environ[k]) if os.environ.get(k) else None  # noqa: E731
+        allowed = os.environ.get("ALLOWED_MODELS")
+        return cls({m.strip() for m in allowed.split(",") if m.strip()} if allowed else None,
+                   num("MAX_REAL_SIMS"), num("MAX_REAL_RUNS"))
+
+    def admit(self, models: list[str], runs: int, sim_id: str) -> None:
+        if all(demo.is_fake(m) for m in models):
+            return
+        if self.allowed is not None:
+            refused = [m for m in models if not demo.is_fake(m) and m not in self.allowed]
+            if refused:
+                raise HTTPException(403, f"this server doesn't run {', '.join(refused)}")
+        if self.max_runs is not None and runs > self.max_runs:
+            raise HTTPException(400, f"at most {self.max_runs} run(s) per live simulation here")
+        with self._lock:
+            if self.max_sims is not None and len(self._running) >= self.max_sims:
+                raise HTTPException(429, f"a live simulation is already running: open ?sim={self._running[0]} "
+                                         "to watch it, or try the scripted model")
+            self._running.append(sim_id)
+
+    def release(self, sim_id: str) -> None:
+        with self._lock:
+            if sim_id in self._running:
+                self._running.remove(sim_id)
 
 
 def create_app(store: Store | None = None, log_runs: bool = False,
@@ -119,6 +155,7 @@ def create_app(store: Store | None = None, log_runs: bool = False,
     )
 
     app.state.dates = None
+    limits = LiveLimits.from_env()
 
     def dates():
         if app.state.dates is None:
@@ -137,12 +174,19 @@ def create_app(store: Store | None = None, log_runs: bool = False,
     def start_simulation(req: StartSimulation, request: Request) -> dict:
         sim_id = uuid.uuid4().hex[:12]
         models = list(llm.ENSEMBLE) if req.models == [demo.ENSEMBLE_ALIAS] else req.models
-        specs = plan(models, req.prices, req.seeds)
+        specs = plan(models, req.seeds)
+        real = not all(demo.is_fake(m) for m in models)
+        couple = None
         if req.my_twin:
             pool = demo.with_her_twin(*tb.garden_inputs(twin.reviewed_twin(request, current_user(request))))
+        elif req.couple_id is not None:
+            try:
+                pool, couple = couples.setup(req.couple_id)
+            except (KeyError, FileNotFoundError) as e:
+                raise HTTPException(404, str(e)) from e
         else:
             try:
-                pool = pool_lib.resolve(req.pool_iid, dates)
+                pool = pool_lib.resolve(req.pool_iid, dates, req.pool_non_matches)
             except KeyError as e:
                 raise HTTPException(404, str(e)) from e
         twins, personas, woman, men = pool.twins, pool.personas, pool.woman, pool.men
@@ -156,12 +200,22 @@ def create_app(store: Store | None = None, log_runs: bool = False,
         featured = featured_spec(specs)
         record["featured_run"] = featured.run_id if featured else None
         record["twins"] = [t.alias for t in twins]  # the viewer places sprites before any event arrives
+        record["woman"] = woman  # whose days the viewer follows
+        record["profiles"] = pool.profiles_or_personas()  # each twin's persona, for the profile cards
+        if pool.matched is not None:
+            record["matched"] = sorted(pool.matched)
+        if couple is not None:  # the couples answer key: her real partner, and how happy they are
+            record["couple"] = {"id": req.couple_id, "partner": couple.partner,
+                                "satisfaction": {"her": couple.satisfaction[0], "him": couple.satisfaction[1]}}
+        if real:  # taken last, so nothing above can fail and leave the slot taken
+            limits.admit(models, len(specs), sim_id)
         app.state.store.save(sim_id, record)
         store = app.state.store
 
-        info = replay.SimulationInfo(sim_id, record["twins"],
+        info = replay.SimulationInfo(sim_id, record["twins"], woman,
                                      scenario=req.scenario if all(demo.is_fake(m) for m in models) else None,
-                                     featured_run=record["featured_run"], created_at=record["created_at"])
+                                     featured_run=record["featured_run"], created_at=record["created_at"],
+                                     profiles=record["profiles"], matched=record.get("matched"))
 
         def stream(events: list[dict], states: list[dict]) -> None:
             if events:
@@ -192,6 +246,9 @@ def create_app(store: Store | None = None, log_runs: bool = False,
                 if not req.background:
                     raise
                 return failed
+            finally:
+                if real:
+                    limits.release(sim_id)
 
         def highlight_model():
             try:
@@ -205,7 +262,8 @@ def create_app(store: Store | None = None, log_runs: bool = False,
             sim = run_simulation(specs, twins,
                                  lambda spec: demo.make_twin_model(spec, personas, fake_scenario=req.scenario, woman=woman),
                                  observe=lambda spec: recorders[spec.run_id].observer,
-                                 on_finished=save_replay, max_days=req.max_days, thresholds=pool.thresholds)
+                                 on_finished=save_replay,
+                                 **({"max_days": req.max_days} if req.max_days else {}))
             done = record | {"status": "done", "pool_iid": req.pool_iid, "my_twin": req.my_twin,
                              **serialize_simulation(sim, pool, highlight_model())}
             if app.state.log_runs:

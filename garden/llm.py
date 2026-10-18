@@ -99,6 +99,7 @@ class CountingModel(language_model.LanguageModel):
         self._attempts = attempts  # retries for overloads and rate limits (fewer when a user is waiting)
         self.stats = CallStats()
         self._lock = threading.Lock()
+        self.chooser: CountingModel | None = None  # answers choices instead, when set (see choose_with)
 
     def _pace(self) -> None:
         if self._pacer:
@@ -140,6 +141,8 @@ class CountingModel(language_model.LanguageModel):
         return out
 
     def sample_choice(self, prompt: str, responses: Sequence[str], *, seed: int | None = None):
+        if self.chooser:  # (counts it in the shared stats)
+            return self.chooser.sample_choice(prompt, responses, seed=seed)
         with self._lock:
             self.stats.choice_calls += 1
         if self._letter_choices and isinstance(self._inner, GuidedChoices):  # guided decoding: always valid
@@ -155,6 +158,13 @@ class CountingModel(language_model.LanguageModel):
         if self._letter_choices:
             return language_model_choice(self, prompt, responses, seed=seed)
         return self._inner.sample_choice(prompt, responses, seed=seed)
+
+    def choose_with(self, chooser: CountingModel) -> CountingModel:
+        """Answer multiple-choice prompts with `chooser` (counted in these stats) and keep this model for
+        speech and reflections: a quick model picks actions, a stronger one writes."""
+        chooser.stats, chooser._lock = self.stats, self._lock
+        self.chooser = chooser
+        return self
 
 
 def parse_choice_letter(sample: str, letters: Sequence[str]) -> str | None:
@@ -298,38 +308,58 @@ class OpenAICompatModel(language_model.LanguageModel):
         from openai import OpenAI
 
         self._name = model_name
-        self._client = OpenAI(base_url=base_url, api_key=api_key)
+        # A request ILMU never answered once held a run for over half an hour: give up when nothing arrives
+        # for CALL_TIMEOUT and let CountingModel ask again.
+        self._client = OpenAI(base_url=base_url, api_key=api_key, timeout=CALL_TIMEOUT, max_retries=0)
 
     def sample_text(self, prompt: str, *, max_tokens: int = language_model.DEFAULT_MAX_TOKENS,
                     terminators: Collection[str] = (), temperature: float = TEXT_TEMPERATURE, **kwargs) -> str:
-        response = self._client.chat.completions.create(
+        return _answer_only(self._create(
             model=self._name,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=max(max_tokens, 64),
             temperature=temperature,
             stop=list(terminators)[:4] or None,
-        )
-        return _answer_only(response.choices[0].message.content or "")
+        ))
 
     def sample_json(self, prompt: str, schema: type) -> str:
         """JSON mode plus the schema in the prompt (no schema enforcement here; the caller validates)."""
         import json
 
         spec = json.dumps(schema.model_json_schema())
-        response = self._client.chat.completions.create(
+        return _answer_only(self._create(
             model=self._name,
             messages=[{"role": "user", "content": f"{prompt}\n\nAnswer with JSON matching this schema:\n{spec}"}],
             response_format={"type": "json_object"},
             max_tokens=8192,
             temperature=TEXT_TEMPERATURE,
-        )
-        return _answer_only(response.choices[0].message.content or "")
+        ))
+
+    def _create(self, **request) -> str:
+        """One completion's answer text, streamed: ILMU cuts off a request that takes too long to answer
+        (503 'use streaming for long requests'), and GLM can reason for a minute before its first word.
+        A timeout, a dropped connection or a reply cut off partway ('The model stopped responding partway
+        through the reply. Please retry.') is retryable, like an overload; HTTP errors (402 out of credit)
+        are left to CountingModel."""
+        from openai import APIError, APIStatusError  # (APIConnectionError and APITimeoutError are APIErrors)
+
+        try:
+            parts = []
+            for chunk in self._client.chat.completions.create(**request, stream=True):
+                if chunk.choices and chunk.choices[0].delta.content:
+                    parts.append(chunk.choices[0].delta.content)
+            return "".join(parts)
+        except APIStatusError:
+            raise
+        except APIError as e:
+            raise RetryableReply(f"{type(e).__name__}: {e}") from e
 
     def sample_choice(self, prompt: str, responses: Sequence[str], *, seed: int | None = None):
         raise NotImplementedError("wrap in CountingModel, which answers choices by letter")
 
 
 ILMU_BASE_URL = "https://api.ilmu.ai/v1"
+CALL_TIMEOUT = 180  # seconds of silence on a stream before giving up on it
 ILMU_MINI = "ilmu-mini-v3.3"
 
 
@@ -344,14 +374,22 @@ def gemini(model_name: str = FLASH, requests_per_minute: int | None = None, atte
 
 
 def make_model(spec: str | None = None, attempts: int = 6) -> CountingModel:
-    """Build a twin model from 'provider:model', e.g. 'gemini:gemini-3.5-flash' or 'ilmu:ilmu-mini-v3.3'.
+    """Build a twin model from 'provider:model', e.g. 'gemini:gemini-3.5-flash' or 'ilmu:ilmu-mini-v3.3', or
+    from 'text model|choice model' to split the work (GLM reasons too long to pick an action quickly).
     Defaults to the TWIN_MODEL environment variable, then Gemini Flash. A bare model name means Gemini."""
     spec = spec or os.environ.get("TWIN_MODEL") or f"gemini:{FLASH}"
+    if "|" in spec:  # 'text model|choice model', e.g. 'ilmu:ilmu-glm-5.3-flash|ilmu:ilmu-mini-v3.3'
+        text, _, choice = spec.partition("|")
+        return make_model(text, attempts).choose_with(make_model(choice, attempts))
     provider, _, name = spec.partition(":") if ":" in spec else ("gemini", "", spec)
     if provider == "gemma" or (provider == "gemini" and name.startswith("gemma")):
         return _paced(GemmaModel(name or GEMMA), "gemma", name or GEMMA, attempts)
     if provider == "gemini":
         return _paced(GenAIModel(name or FLASH), "gemini", name or FLASH, attempts)
+    if provider == "mediapipe":  # type-safe decisions on this machine (garden/decisions.py): choices only
+        from .decisions import DEFAULT, DecisionMakerModel
+
+        return CountingModel(DecisionMakerModel(name or DEFAULT), attempts=attempts)
     if provider == "ilmu":
         inner = OpenAICompatModel(name or ILMU_MINI, ILMU_BASE_URL, os.environ["ILMU_API_KEY"])
         return _paced(inner, "ilmu", name or ILMU_MINI, attempts)
@@ -394,6 +432,6 @@ class KeywordModel(language_model.LanguageModel):
         # Default: the first option as listed in Concordia's original order isn't knowable here,
         # so prefer a plain, compliant action when it's offered.
         for letter, text in options.items():
-            if text.startswith("Spend time talking") and letter in responses:
+            if text.startswith(("Spend time talking", "Keep talking")) and letter in responses:
                 return responses.index(letter), letter, {}
         return 0, responses[0], {}

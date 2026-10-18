@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from garden import about_me
 from garden import onboarding as qa
 
 from .auth import current_user
@@ -65,3 +66,37 @@ def answer(body: Answer, request: Request, uid: str = Depends(current_user)) -> 
         # Asked outside the write (a model call doesn't belong in a transaction); the write re-checks.
         followup = qa.followup_for(q, body.text.strip(), request.app.state.followup_model())
     return _update(request, uid, lambda d: qa.record_answer(d, body.question_id, body.text, followup, _now()))
+
+
+# About you (garden/about_me.py): three short forms next to the questions. Each part is saved whole.
+ABOUT_PARTS = {"profile": about_me.Profile, "personality": about_me.Personality, "preferences": about_me.Preferences}
+
+
+@router.get("/about")
+def get_about(request: Request, uid: str = Depends(current_user)) -> dict:
+    doc = request.app.state.store.get_user(uid) or qa.new_doc()
+    return {"form": about_me.form(), "about": doc.get("about", {}), "status": about_me.status(doc.get("about")),
+            "facts": about_me.memories(doc.get("about", {}))}
+
+
+@router.put("/about/{part}")
+def save_about(part: str, body: dict, request: Request, uid: str = Depends(current_user)) -> dict:
+    """Save one form (profile, personality or preferences), validated; returns what the twin will know."""
+    if part not in ABOUT_PARTS:
+        raise HTTPException(404, f"no form called {part!r}")
+    try:
+        value = ABOUT_PARTS[part](**body).model_dump()
+    except ValueError as e:  # pydantic's ValidationError is a ValueError
+        raise HTTPException(422, str(e)) from e
+
+    def change(doc: dict | None) -> dict:
+        doc = doc or qa.new_doc()
+        if not qa.has_current_consent(doc):
+            raise qa.OnboardingError(403, "consent first: your answers are only used once you agree")
+        return doc | {"about": doc.get("about", {}) | {part: value}}
+
+    try:
+        doc = request.app.state.store.update_user(uid, change)
+    except qa.OnboardingError as e:
+        raise HTTPException(e.status, str(e)) from e
+    return {"about": doc["about"], "status": about_me.status(doc["about"]), "facts": about_me.memories(doc["about"])}

@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from api.main import create_app
 from api.store import MemoryStore
 from garden import demo
+from garden.about_me import STRICT_GROUNDING
 from garden import onboarding as qa
 from garden import twin_builder as tb
 
@@ -109,9 +110,10 @@ def test_rebuilding_keeps_the_users_edits():
     assert twin["rebelliousness"] == 0.1
 
 
-@pytest.mark.parametrize("rebel,expected", [(0.0, 0.59), (0.5, 0.55), (1.0, 0.51)])
-def test_rebelliousness_sets_the_verdict_threshold(rebel, expected):
-    assert tb.threshold(rebel) == expected
+@pytest.mark.parametrize("rebel,expected", [(0.0, "I keep to the rules"), (0.5, ""), (1.0, "I don't always do")])
+def test_rebelliousness_becomes_something_her_twin_knows_about_herself(rebel, expected):
+    memory = tb.rebel_memory(rebel)
+    assert memory.startswith(expected) and (memory == "") == (expected == "")
 
 
 def test_her_twin_can_be_the_woman_in_a_simulation():
@@ -129,11 +131,13 @@ def test_her_twin_can_be_the_woman_in_a_simulation():
     assert sim["my_twin"] is True
 
 
-def test_her_persona_and_threshold_reach_the_world():
+def test_her_persona_and_how_she_sees_rules_reach_the_world():
     her = tb.new_twin("u", extraction(rebel=1.0), "fake", "now")
     pool = demo.with_her_twin(*tb.garden_inputs(her))
-    assert pool.personas[her["alias"]].startswith("I remember moment")
-    assert pool.thresholds == ((her["alias"], 0.51),) and pool.woman == her["alias"]
+    persona = pool.personas[her["alias"]]
+    assert persona.startswith("I remember moment") and tb.rebel_memory(1.0) in persona
+    assert persona.endswith(STRICT_GROUNDING)  # a real person's twin invents nothing about them
+    assert pool.woman == her["alias"]
 
 
 def test_a_my_twin_simulation_needs_sign_in_and_a_twin():
@@ -164,12 +168,13 @@ def test_a_model_outage_is_a_503_not_a_crash():
     assert res.status_code == 503 and "limit" not in res.json()["detail"]
 
 
-def test_edited_traits_override_the_extraction_and_set_her_threshold():
+def test_edited_traits_override_the_extraction_and_change_how_she_sees_rules():
     c, _ = client()
     complete_qa(c)
-    assert c.post("/me/twin").json()["threshold"] == tb.threshold(0.8)
+    assert c.post("/me/twin").json()["rebel_memory"] == tb.rebel_memory(0.8)
     twin = c.put("/me/twin/traits", json={"rebelliousness": 0.0, "values": ["loyalty"]}).json()
-    assert twin["rebelliousness"] == 0.0 and twin["values"] == ["loyalty"] and twin["threshold"] == 0.59
+    assert twin["rebelliousness"] == 0.0 and twin["values"] == ["loyalty"]
+    assert twin["rebel_memory"] == tb.rebel_memory(0.0) and "threshold" not in twin
     assert twin["dealbreakers"] == ["dishonesty"] and twin["traits_edited"] == ["rebelliousness", "values"]
     assert c.put("/me/twin/traits", json={"rebelliousness": 3}).status_code == 422
 

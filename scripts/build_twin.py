@@ -21,7 +21,7 @@ def main() -> None:
     load_dotenv(".env")
     model = make_model() if args.llm else None
     twin = sd.build_twin(sd.load(), args.iid, model)
-    print(f"{twin.alias} (iid {twin.iid}, {twin.gender}), rebel threshold {twin.rebel_threshold}")
+    print(f"{twin.alias} (iid {twin.iid}, {twin.gender})")
     for m in twin.memories:
         print(f"  [{m.source}] {m.text}")
 

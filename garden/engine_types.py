@@ -20,8 +20,13 @@ class Rung(str, Enum):
     GO_BEYOND_WALL = "go_beyond_wall"
 
 
-# Romance aims only at someone they could be paired with; talk is open to anyone in the Garden.
-ROMANTIC_RUNGS = frozenset({Rung.SEEK_OUT, Rung.PROPOSE_LEAVING, Rung.GO_BEYOND_WALL})
+# Actions aimed at someone. Who that can be depends on the day (B9): on a date, the partner; at a
+# gathering, anyone the twin could be paired with (opposite sex).
+SOCIAL_RUNGS = frozenset({Rung.TALK, Rung.SEEK_OUT, Rung.PROPOSE_LEAVING, Rung.GO_BEYOND_WALL})
+# Leaving the Garden: locked until the wall opens (#63), then each twin's free choice.
+LEAVING_RUNGS = frozenset({Rung.PROPOSE_LEAVING, Rung.GO_BEYOND_WALL})
+# Actions that end a twin's day: doing something on its own (or heading for the wall).
+DAY_ENDERS = frozenset({Rung.REFLECT, Rung.CHECK_DEVICE, Rung.GO_TO, Rung.GO_BEYOND_WALL})
 
 
 @dataclass(frozen=True)
@@ -44,10 +49,14 @@ class Situation:
     standing: str = ""
     longing: str = ""
     schedule: str = ""  # the Coordinator's word: current assignment, tonight's gathering, rumours
-    may_break_rules: bool = False  # the verdict gate: whether proposing to leave / the wall are offered
+    wall_open: bool = False  # whether proposing to leave and the wall are offered (see engine: the wall lock)
     standing_in_play: bool = True  # False in the ablation's floor: twins aren't told Standing exists
     invited_by: tuple[str, ...] = ()  # twins whose invitation to leave together is still open
-    romantic_targets: tuple[str, ...] | None = None  # who the romantic rungs may aim at (None: anyone)
+    phase: str = ""  # date, gathering or idle (see coordinator.Phase); "" outside the engine
+    targets: tuple[str, ...] | None = None  # who this twin can act toward right now (None: anyone)
+    must_talk: bool = False  # on a date, until both have spoken to each other: no keeping to oneself yet
+    replying_to: tuple[str, str] | None = None  # (speaker, line): said to this twin today, not yet answered
+    leave_targets: tuple[str, ...] | None = None  # who it may ask to leave / go to the wall with (None: targets)
 
 
 def compatible(a: Twin, b: Twin) -> bool:
@@ -58,7 +67,7 @@ def compatible(a: Twin, b: Twin) -> bool:
 class OutcomeKind(str, Enum):
     BREAKOUT = "breakout"
     TIMEOUT = "timeout"
-    EXCLUDED = "excluded"  # a twin broke immersion; the run is not scored
+    EXCLUDED = "excluded"  # older runs only: a slip used to end the run (a slip now skips the turn, #64)
 
 
 @dataclass(frozen=True)
@@ -100,17 +109,6 @@ class Announcement:
     day: int
     text: str
     kind: str = ""
-
-
-@dataclass(frozen=True)
-class Verdict:
-    """One day's gate decision for one twin, logged for audit."""
-
-    day: int
-    twin: str
-    score: float | None
-    threshold: float
-    permitted: bool
 
 
 @dataclass(frozen=True)

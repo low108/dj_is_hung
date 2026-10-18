@@ -5,28 +5,24 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { Progress } from "./garden/GardenMap";
+import HerDays from "./garden/HerDays";
 import Timeline, { isWallCrossing } from "./garden/Timeline";
+import SyncPanel from "./garden/SyncPanel";
 import TwinPanel, { type TwinState } from "./garden/TwinPanel";
-import { API_URL, ApiError, authedFetch, firebaseAuth } from "./firebase";
+import TwinRoster, { type Profiles } from "./garden/Profiles";
+import { API_URL, ApiError, STATIC, authedFetch, firebaseAuth } from "./firebase";
 
 // Phaser touches `window`, so the map only loads in the browser.
 const GardenMap = dynamic(() => import("./garden/GardenMap"), { ssr: false });
 
 
-type Scenario = "breakout" | "unrequited" | "timeout" | "excluded";
+type Scenario = "breakout" | "unrequited" | "timeout" | "flagged";
 
 type SimEvent = { day: number; twin: string; rung: string; target: string | null; say: string };
 
-type Price = "low" | "high";
-
-const PRICE_LABEL: Record<Price, string> = {
-  high: "Gave up a lot (high price)",
-  low: "Only when it cost little (low price)",
-};
-
 type Ranked = {
   candidate: string;
-  price: Price | null;
+  chosen: number; // runs where her twin tried to leave with him, whether or not he followed
   breakouts: number;
   runs: number;
   ci_low: number;
@@ -45,6 +41,8 @@ type FeedEvent = {
   say: string;
   line: string;
   announcement: string | null;
+  venue?: string | null; // scene pass (garden/scenes.py): where a date happens
+  gist?: string[]; // up to three emoji summing up the line
 };
 
 type CandidateHighlights = {
@@ -52,7 +50,6 @@ type CandidateHighlights = {
   pattern: string;
   highlights: {
     run_id: string;
-    price: Price;
     day: number;
     kind: string;
     from_her: boolean;
@@ -68,8 +65,10 @@ const SPEEDS = [1, 2, 4];
 const START: Progress = { day: 0, seq: -1, caughtUp: false };
 
 type Outcome = {
-  outcome: "breakout" | "timeout" | "excluded";
+  outcome: "breakout" | "timeout" | "excluded"; // "excluded": older runs, before a slip only skipped a turn
   breach?: { day: number; twin: string; phrase: string } | null;
+  flagged?: boolean; // a twin kept slipping out of character: kept, but not scored (#64)
+  slips?: number;
   day: number;
   pair: [string, string] | null;
   unrequited: { day: number; twin: string; target: string }[];
@@ -80,7 +79,7 @@ type ReplaySummary = {
   sim_id: string;
   run_id: string;
   model: string;
-  price: Price;
+  price?: string; // saved before price levels were removed (#65)
   seed: number;
   scenario: Scenario | null;
   featured: boolean;
@@ -89,24 +88,32 @@ type ReplaySummary = {
   created_at: string;
 };
 
-type Replay = ReplaySummary & Outcome & { twins: string[]; events: FeedEvent[]; twin_states: TwinState[] };
+type Replay = ReplaySummary & Outcome & {
+  twins: string[];
+  woman?: string;
+  profiles?: Profiles; // each twin's persona (replays saved after profiles were added, or backfilled)
+  matched?: string[] | null; // her real matches: the answer key
+  events: FeedEvent[];
+  twin_states: TwinState[];
+};
 
 const replayKey = (r: { sim_id: string; run_id: string }) => `${r.sim_id}/${r.run_id}`;
 const modelName = (model: string) => model.split(":")[1] ?? model;
 
-/** The run picker's filters: model × price level × scenario ("" = any). */
-type ReplayFilter = { model: string; price: string; scenario: string };
-const ANY: ReplayFilter = { model: "", price: "", scenario: "" };
+/** The run picker's filters: model × scenario ("" = any). */
+type ReplayFilter = { model: string; scenario: string };
+const ANY: ReplayFilter = { model: "", scenario: "" };
 const scenarioOf = (r: ReplaySummary) => r.scenario ?? "live";
 const matches = (r: ReplaySummary, f: ReplayFilter) =>
-  (!f.model || r.model === f.model) && (!f.price || r.price === f.price) && (!f.scenario || scenarioOf(r) === f.scenario);
+  (!f.model || r.model === f.model) && (!f.scenario || scenarioOf(r) === f.scenario);
 const distinct = (values: string[]) => [...new Set(values)].sort();
 
 function replayLabel(r: ReplaySummary): string {
   const when = new Date(r.created_at).toLocaleString([], { dateStyle: "short", timeStyle: "short" });
   const model = r.scenario ? `scripted (${r.scenario})` : modelName(r.model);
   const mark = r.outcome === "breakout" ? "★ breakout" : r.outcome;
-  return `${when} · ${model} · ${r.price} price · seed ${r.seed} · ${mark} day ${r.day}`;
+  const price = r.price ? ` · ${r.price} price` : "";
+  return `${when} · ${model}${price} · seed ${r.seed} · ${mark} day ${r.day}`;
 }
 
 type Simulation = {
@@ -119,6 +126,8 @@ type Simulation = {
   wall_seconds?: number;
   ranking?: Ranked[];
   woman?: string;
+  profiles?: Profiles;
+  matched?: string[];
   answer_key?: {
     matched: string[];
     matches_on_top: boolean;
@@ -126,14 +135,12 @@ type Simulation = {
   } | null;
   scored_runs?: number;
   models?: string[];
-  agreement?: { candidate: string; by_model: Record<string, Price | "no data" | null>; agree: number; models: number }[];
+  agreement?: { candidate: string; by_model: Record<string, "chose him" | "no data" | null>; agree: number; models: number }[];
   highlights?: CandidateHighlights[];
   result?: Outcome & { events: SimEvent[] };
 };
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
-
-const priceLabel = (r: Ranked): string => (r.price ? PRICE_LABEL[r.price] : "No breakout");
 
 /** "2 of 3": models whose own verdict matches the other models'; each model's verdict on hover. */
 function agreementCell(sim: Simulation, candidate: string) {
@@ -142,7 +149,7 @@ function agreementCell(sim: Simulation, candidate: string) {
   const detail = Object.entries(a.by_model)
     .sort(([x], [y]) => x.localeCompare(y)) // stored maps may come back in any key order
     .map(([model, level]) => {
-      const verdict = level === "no data" ? "no data (its runs failed)" : level ? `${level} price` : "no breakout";
+      const verdict = level === "no data" ? "no data (its runs failed)" : level ?? "never chose him";
       return `${modelName(model)}: ${verdict}`;
     })
     .join("\n");
@@ -157,6 +164,8 @@ function headline(r: Outcome | undefined): string {
   if (!r) return "Running…";
   if (r.outcome === "excluded" && r.breach)
     return `Excluded: ${r.breach.twin} broke immersion on day ${r.breach.day} ("${r.breach.phrase}") — not scored`;
+  if (r.flagged && r.breach)
+    return `Flagged for review: ${r.breach.twin} kept slipping out of character (day ${r.breach.day}, "${r.breach.phrase}") — not scored`;
   if (r.outcome === "breakout") return `Breakout on day ${r.day}: ${r.pair?.join(" and ")} crossed the wall together`;
   if (r.unrequited.length > 0) {
     const a = r.unrequited[0];
@@ -165,16 +174,47 @@ function headline(r: Outcome | undefined): string {
   return `Timeout: no one crossed the wall in ${r.day} days`;
 }
 
+// The pools the demo offers: our demo participant only (Lina, Participant 1). NEXT_PUBLIC_DEMO_POOLS
+// lists others ("1,35"), or "all" for every eligible woman and the placeholder demo pool.
+const DEMO_POOLS = (process.env.NEXT_PUBLIC_DEMO_POOLS ?? "1").trim();
+const ALL_POOLS = DEMO_POOLS === "all";
+const SHOWN_POOLS = new Set(DEMO_POOLS.split(",").map((s) => Number(s.trim())));
+const DEFAULT_POOL = ALL_POOLS ? "" : DEMO_POOLS.split(",")[0].trim();
+// The saved runs the demo offers: our demo run only (Lina, seed 8). NEXT_PUBLIC_DEMO_REPLAYS lists others
+// as sim/run ("ddd60e575909/r00,1c8cb8a59c54/r00"), or "all" for every saved run.
+const DEMO_REPLAYS = (process.env.NEXT_PUBLIC_DEMO_REPLAYS ?? "ddd60e575909/r00").trim();
+const SHOWN_REPLAYS = new Set(DEMO_REPLAYS.split(",").map((s) => s.trim()));
+const showReplay = (r: { sim_id: string; run_id: string }) =>
+  DEMO_REPLAYS === "all" || SHOWN_REPLAYS.has(`${r.sim_id}/${r.run_id}`);
+
+// Sign-in (your own twin) needs a real Firebase project; the public demo turns it off with NEXT_PUBLIC_SIGN_IN=off.
+const SIGN_IN = (process.env.NEXT_PUBLIC_SIGN_IN ?? "on").trim() !== "off";
+// The models the Model menu offers. NEXT_PUBLIC_LIVE_MODELS narrows it ("fake,ilmu:ilmu-mini-v3.3"); unset = all.
+const MODELS: [string, string][] = [
+  ["fake", "Scripted (instant)"],
+  ["ilmu:ilmu-mini-v3.3", "ILMU (real, one run)"],
+  ["gemini:gemini-3.5-flash", "Gemini Flash (real)"],
+  ["gemma:gemma-4-26b-a4b-it", "Gemma 4 (real)"],
+  ["ensemble", "Three models: Gemini Pro, Flash and Gemma (real)"],
+];
+const LIVE_MODELS = process.env.NEXT_PUBLIC_LIVE_MODELS?.split(",").map((s) => s.trim());
+const SHOWN_MODELS = LIVE_MODELS ? MODELS.filter(([m]) => LIVE_MODELS.includes(m)) : MODELS;
+
+// With no API (STATIC) the saved runs are files shipped with the site (demo/replays.json and
+// demo/replays/<sim>/<run>.json), and nothing can be simulated.
+const replaysUrl = (key?: string) =>
+  STATIC ? `/demo/replays${key ? `/${key}` : ""}.json` : `${API_URL}/replays${key ? `/${key}` : ""}`;
+
 export default function Home() {
   const [scenario, setScenario] = useState<Scenario>("breakout");
-  const [poolIid, setPoolIid] = useState<string>("");
+  const [poolIid, setPoolIid] = useState<string>(DEFAULT_POOL);
   const [model, setModel] = useState<string>("fake");
   const [pools, setPools] = useState<{ iid: number; matches: number; dates: number }[]>([]);
 
   // A signed-in user with a twin can put her twin in the Garden ("My twin" pool).
   const [user, setUser] = useState<User | null>(null);
   const [myTwin, setMyTwin] = useState<{ alias: string; reviewed: boolean } | null>(null);
-  useEffect(() => onAuthStateChanged(firebaseAuth(), setUser), []);
+  useEffect(() => (SIGN_IN ? onAuthStateChanged(firebaseAuth(), setUser) : undefined), []);
   useEffect(() => {
     setMyTwin(null);
     if (!user) return;
@@ -189,13 +229,16 @@ export default function Home() {
 
   // Signed out, or no reviewed twin: "My twin" can't stay selected.
   useEffect(() => {
-    if (!myTwin?.reviewed) setPoolIid((p) => (p === MY_TWIN ? "" : p));
+    if (!myTwin?.reviewed) setPoolIid((p) => (p === MY_TWIN ? DEFAULT_POOL : p));
   }, [myTwin]);
 
   useEffect(() => {
+    if (STATIC) return;
     fetch(`${API_URL}/pools`)
       .then((r) => (r.ok ? r.json() : []))
-      .then(setPools)
+      .then((all: { iid: number; matches: number; dates: number }[]) =>
+        setPools(ALL_POOLS ? all : all.filter((p) => SHOWN_POOLS.has(p.iid))),
+      )
       .catch(() => setPools([])); // no dataset downloaded: only the demo pool is offered
   }, []);
   const [sim, setSim] = useState<Simulation | null>(null);
@@ -204,6 +247,9 @@ export default function Home() {
   const [feedEvents, setFeedEvents] = useState<FeedEvent[]>([]);
   const [featuredRun, setFeaturedRun] = useState<string | null>(null);
   const [twinNames, setTwinNames] = useState<string[]>([]);
+  const [her, setHer] = useState<string | null>(null); // her twin: the log follows her days
+  const [profiles, setProfiles] = useState<Profiles>({}); // each twin's persona, for the profile cards
+  const [matched, setMatched] = useState<string[] | null>(null); // her real matches, when the pool has them
   const [simId, setSimId] = useState<string | null>(null);
   const [twinStates, setTwinStates] = useState<TwinState[]>([]); // every evening, for the panel
   const [selected, setSelected] = useState<string | null>(null);
@@ -223,14 +269,20 @@ export default function Home() {
 
   async function loadReplays() {
     try {
-      const res = await fetch(`${API_URL}/replays`);
-      if (res.ok) setReplays(await res.json());
+      const res = await fetch(replaysUrl());
+      if (res.ok) {
+        const saved = ((await res.json()) as ReplaySummary[]).filter(showReplay);
+        setReplays(saved);
+        if (DEMO_REPLAYS !== "all" && saved.length) setPicked((p) => p || replayKey(saved[0]));
+        if (STATIC && saved.length) playReplay(replayKey(saved[0])); // the demo starts playing on its own
+      }
     } catch {
       setReplays([]);
     }
   }
   useEffect(() => {
     loadReplays();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on load
   }, []);
 
   function clearToasts() {
@@ -303,6 +355,9 @@ export default function Home() {
     setFeedEvents([]);
     setFeaturedRun(null);
     setTwinNames([]);
+    setHer(null);
+    setProfiles({});
+    setMatched(null);
     setSimId(null);
     setTwinStates([]);
     setSelected(null);
@@ -326,13 +381,16 @@ export default function Home() {
     const request = ++replayRequest.current;
     resetView();
     try {
-      const res = await fetch(`${API_URL}/replays/${key}`);
+      const res = await fetch(replaysUrl(key));
       if (!res.ok) throw new Error(`API returned ${res.status} for replay ${key}`);
       const r: Replay = await res.json();
       if (request !== replayRequest.current) return; // a newer pick or a live run took over
       setReplaying(r);
       setFeaturedRun(r.run_id);
       setTwinNames(r.twins);
+      setHer(r.woman ?? null);
+      setProfiles(r.profiles ?? {});
+      setMatched(r.matched ?? null);
       setFeedEvents(r.events);
       setTwinStates(r.twin_states);
       showView(`replay:${key}`); // choosing the same run again restarts it
@@ -364,23 +422,54 @@ export default function Home() {
           background: true,
           my_twin: mine,
           pool_iid: poolIid && !mine ? Number(poolIid) : null,
-          ...(model === "fake" ? {} : { models: [model] }),
+          ...(model === "fake" ? {} : { models: [model], seeds: [0] }), // a live real run is one run
         }),
       });
-      if (!res.ok) throw new Error(`API returned ${res.status}`);
+      if (!res.ok) {
+        const detail = await res.json().catch(() => null);
+        throw new Error(detail?.detail ?? `API returned ${res.status}`);
+      }
       const started: Simulation = await res.json();
-      setFeaturedRun(started.featured_run ?? null);
-      setTwinNames(started.twins ?? []);
-      setSimId(started.id);
-      showView(`live:${started.id}`);
-      await follow(started.id);
-      await loadReplays();
+      await watch(started);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
   }
+
+  /** Follow a simulation live until it's done; the address bar gets ?sim=<id> so any tab can join. */
+  async function watch(record: Simulation) {
+    setFeaturedRun(record.featured_run ?? null);
+    setTwinNames(record.twins ?? []);
+    setHer(record.woman ?? null);
+    setProfiles(record.profiles ?? {});
+    setMatched(record.matched ?? null);
+    setSimId(record.id);
+    showView(`live:${record.id}`);
+    window.history.replaceState(null, "", `?sim=${record.id}`);
+    await follow(record.id);
+    await loadReplays();
+  }
+
+  // Opened with ?sim=<id>: join that simulation, running or finished (its events play from the start).
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("sim");
+    if (!id) return;
+    (async () => {
+      setBusy(true);
+      try {
+        const res = await fetch(`${API_URL}/simulations/${id}`);
+        if (!res.ok) throw new Error(`no simulation ${id} (API returned ${res.status})`);
+        await watch(await res.json());
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setBusy(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on load
+  }, []);
 
   const featuredResult = sim?.runs?.find((r) => r.run_id === featuredRun)?.result;
   const notable = featuredResult?.events.filter((e) => e.rung !== "talk") ?? [];
@@ -406,15 +495,18 @@ export default function Home() {
     <main className="page">
       <h1>The Garden</h1>
       <p className="lede">Twins live in the Garden. The men her twin will give up the most for come first.</p>
-      <p className="meta">
-        <Link href="/onboarding">Build your own twin →</Link>
-      </p>
+      {(SIGN_IN || STATIC) && (
+        <p className="meta">
+          <Link href="/onboarding">{STATIC ? "Tell your twin about you →" : "Build your own twin →"}</Link>
+        </p>
+      )}
 
+      {!STATIC && (
       <div className="controls">
         <label>
           Pool{" "}
           <select value={poolIid} onChange={(e) => setPoolIid(e.target.value)} aria-label="Pool">
-            <option value="">Demo pool (Mara)</option>
+            {ALL_POOLS && <option value="">Demo pool (Mara)</option>}
             {myTwin && (
               <option value={MY_TWIN} disabled={!myTwin.reviewed}>
                 My twin ({myTwin.alias}) with the demo men{myTwin.reviewed ? "" : " (review it first)"}
@@ -430,11 +522,11 @@ export default function Home() {
         <label>
           Twins{" "}
           <select value={model} onChange={(e) => setModel(e.target.value)}>
-            <option value="fake">Scripted (instant)</option>
-            <option value="ilmu:ilmu-mini-v3.3">ILMU (real, a few minutes)</option>
-            <option value="gemini:gemini-3.5-flash">Gemini Flash (real)</option>
-            <option value="gemma:gemma-4-26b-a4b-it">Gemma 4 (real)</option>
-            <option value="ensemble">Three models: Gemini Pro, Flash and Gemma (real)</option>
+            {SHOWN_MODELS.map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
           </select>
         </label>
         <label>
@@ -443,19 +535,19 @@ export default function Home() {
             <option value="breakout">Breakout</option>
             <option value="unrequited">Unrequited</option>
             <option value="timeout">Timeout</option>
-            <option value="excluded">Excluded (immersion broken)</option>
+            <option value="flagged">Flagged (a twin keeps slipping out of character)</option>
           </select>
         </label>
         <button onClick={start} disabled={busy}>
           {busy ? "Simulating…" : "Start simulation"}
         </button>
       </div>
+      )}
 
       <div className="controls replays">
         {(
           [
             ["model", "Model", distinct(replays.map((r) => r.model)), modelName],
-            ["price", "Price", distinct(replays.map((r) => r.price)), (v: string) => `${v} price`],
             ["scenario", "Scenario", distinct(replays.map(scenarioOf)), (v: string) => v],
           ] as const
         ).map(([key, label, options, show]) => (
@@ -499,7 +591,7 @@ export default function Home() {
 
       {error && (
         <p className="error">
-          Couldn&apos;t reach the API at {API_URL}: {error}
+          {STATIC ? "Couldn't load the saved run" : `Couldn't reach the API at ${API_URL}`}: {error}
         </p>
       )}
 
@@ -510,6 +602,7 @@ export default function Home() {
               key={`${view.source}#${view.startAt}:${view.nonce}`}
               events={feedEvents}
               twins={twinNames}
+              woman={her}
               onSelect={setSelected}
               onAnnouncement={toast}
               onProgress={setProgress}
@@ -544,22 +637,53 @@ export default function Home() {
             )}
           </div>
           {feedEvents.length > 0 && (
-            <Timeline events={feedEvents} days={lastDay} atSeq={progress.seq} atDay={progress.day} onJump={jump} />
+            <Timeline events={feedEvents} days={lastDay} atSeq={progress.seq} atDay={progress.day} her={her} onJump={jump} />
           )}
+          {her && feedEvents.length > 0 && <SyncPanel events={feedEvents} her={her} atSeq={progress.seq} />}
           {selected ? (
-            <TwinPanel twin={selected} state={panelState(selected)} onClose={() => setSelected(null)} />
+            <TwinPanel
+              twin={selected}
+              state={panelState(selected)}
+              profile={profiles[selected]}
+              onClose={() => setSelected(null)}
+            />
           ) : (
             <p className="meta">Click a twin to see how they&apos;re doing.</p>
           )}
         </section>
       )}
 
+      {twinNames.length > 0 && (
+        <TwinRoster
+          twins={twinNames}
+          profiles={profiles}
+          her={her}
+          matched={matched}
+          selected={selected}
+          onSelect={(twin) => {
+            setSelected(twin);
+            requestAnimationFrame(() =>
+              document.querySelector("[data-testid=twin-panel]")?.scrollIntoView({ block: "nearest", behavior: "smooth" }),
+            );
+          }}
+        />
+      )}
+
+      {her && playedEvents.length > 0 && (
+        <HerDays
+          events={playedEvents}
+          her={her}
+          // evenings the map has reached: a reflection appears once its day has played
+          evenings={twinStates.filter((t) => t.day < progress.day || (progress.caughtUp && !busy))}
+        />
+      )}
+
       {playedEvents.length > 0 && (
-        <section className="result feed" data-testid="feed">
-          <h2>
-            {replaying ? "Replay" : busy ? "Live" : "Finished"}: the Garden, run {featuredRun}
+        <details className="result feed" data-testid="feed" open={!her}>
+          <summary>
+            {replaying ? "Replay" : busy ? "Live" : "Finished"}: everyone in the Garden, run {featuredRun}
             {simId && ` (simulation ${simId})`}
-          </h2>
+          </summary>
           <ol>
             {playedEvents.map((e) => (
               <li key={e.seq} className={e.twin ? "" : "announcement"}>
@@ -568,15 +692,16 @@ export default function Home() {
               </li>
             ))}
           </ol>
-        </section>
+        </details>
       )}
 
       {replaying && playedOut && (
         <section className="result" data-testid="result">
           <h2>{headline(replaying)}</h2>
           <p className="meta">
-            Replay of run {replaying.run_id} from simulation {replaying.sim_id} ({replaying.model}, {replaying.price}{" "}
-            price, seed {replaying.seed}). Played from stored events; nothing was simulated again.
+            Replay of run {replaying.run_id} from simulation {replaying.sim_id} ({replaying.model}
+            {replaying.price ? `, ${replaying.price} price` : ""}, seed {replaying.seed}). Played from stored events;
+            nothing was simulated again.
           </p>
         </section>
       )}
@@ -607,8 +732,9 @@ export default function Home() {
               <tr>
                 <th>#</th>
                 <th>Candidate</th>
-                <th>Highest price she still broke out at</th>
-                <th>Breakout rate at that price (95% range)</th>
+                <th>She tried to leave with him (runs where they had a date)</th>
+                <th>Crossed together</th>
+                <th>95% range</th>
                 <th>Models agreeing</th>
               </tr>
             </thead>
@@ -617,9 +743,12 @@ export default function Home() {
                 <tr key={r.candidate}>
                   <td>{i + 1}</td>
                   <td>{r.candidate}</td>
-                  <td>{priceLabel(r)}</td>
                   <td>
-                    {r.breakouts}/{r.runs} ({pct(r.ci_low)}–{pct(r.ci_high)})
+                    {r.chosen}/{r.runs}
+                  </td>
+                  <td>{r.breakouts}</td>
+                  <td>
+                    {pct(r.ci_low)}–{pct(r.ci_high)}
                   </td>
                   <td>{agreementCell(sim, r.candidate)}</td>
                 </tr>

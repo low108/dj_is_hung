@@ -171,4 +171,11 @@ def progress(doc: dict) -> dict:
         doc["answers"][q.id].get("followup") and doc["answers"][q.id].get("followup_answer") is None))
     return {"consent": doc["consent"] if has_current_consent(doc) else None, "consent_text": CONSENT_TEXT,
             "consent_version": CONSENT_VERSION, "total": len(QUESTIONS), "answered": done,
-            "complete": nxt is None, "current": current, "max_chars": MAX_CHARS}
+            "complete": nxt is None, "current": current, "max_chars": MAX_CHARS,
+            "about": about_status(doc.get("about"))}
+
+
+def about_status(about: dict | None) -> dict:
+    from .about_me import status
+
+    return status(about)

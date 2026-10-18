@@ -5,14 +5,18 @@ from fastapi.testclient import TestClient
 
 from api.main import create_app
 from api.store import MemoryStore
-from garden import Action, Rung, ScriptedModel, demo, highlights
-from garden.batch import PriceLevel, plan, run_simulation
+from garden import Action, Rung, demo, highlights
+from garden.fake_model import ScenarioModel
+from garden.batch import plan, run_simulation
 from garden.scoring import score
 
 WOMAN, MAN = demo.WOMAN, demo.MAN
 WALL, LEAVE, SEEK, TALK = Rung.GO_BEYOND_WALL, Rung.PROPOSE_LEAVING, Rung.SEEK_OUT, Rung.TALK
-SCRIPT = {(MAN, 1): Action(SEEK, WOMAN), (WOMAN, 1): Action(TALK, MAN, "I like walking with you."),
-          (MAN, 2): Action(LEAVE, WOMAN), (WOMAN, 3): Action(WALL, MAN)}
+
+
+def breakout(spec=None):
+    """When Mara and Ren meet: she talks, he proposes leaving, she answers at the wall."""
+    return ScenarioModel("breakout", WOMAN, MAN)
 
 
 class Captioner:
@@ -27,8 +31,8 @@ class Captioner:
 
 
 def simulate(seeds=(0, 1)):
-    specs = plan(["fake:a"], list(PriceLevel), list(seeds))
-    sim = run_simulation(specs, demo.POOL, lambda spec: ScriptedModel(SCRIPT), max_days=5)
+    specs = plan(["fake:a"], list(seeds))
+    sim = run_simulation(specs, demo.POOL, breakout)
     return list(sim.records), score(list(sim.records), WOMAN, demo.MEN)
 
 
@@ -36,9 +40,9 @@ def test_each_top_candidate_gets_three_to_four_highlights_and_an_exact_pattern_l
     records, scores = simulate()
     [ren] = highlights.for_simulation(records, scores, WOMAN, demo.PERSONAS)
     assert ren.candidate == MAN and 3 <= len(ren.highlights) <= 4
-    assert ren.pattern == "Her twin gave up her Pairing Day for his twin in 2 of 2 runs where it cost her the most."
+    assert ren.pattern == ("Her twin tried to leave the Garden with his twin in 2 of the 2 runs where they had a date. "
+                           "They crossed together in 2.")
     assert [h.kind for h in ren.highlights[:2]] == ["breakout", "go_beyond_wall"]
-    assert ren.highlights[0].price == "high"
 
 
 def test_every_highlight_is_labelled_as_the_twins():
@@ -108,9 +112,15 @@ def test_three_letter_and_inflected_persona_facts_are_blocked():
 
 
 def test_the_model_never_sees_what_the_twins_said():
-    script = SCRIPT | {(WOMAN, 1): Action(TALK, MAN, "As a nurse in Chicago I rarely get evenings off.")}
-    specs = plan(["fake:a"], list(PriceLevel), [0])
-    sim = run_simulation(specs, demo.POOL, lambda spec: ScriptedModel(script), max_days=5)
+    class Chatty(ScenarioModel):
+        def choose_action(self, twin, day, others, situation=None):
+            action = super().choose_action(twin, day, others, situation)
+            if action.say:
+                return Action(action.rung, action.target, "As a nurse in Chicago I rarely get evenings off.")
+            return action
+
+    specs = plan(["fake:a"], [0])
+    sim = run_simulation(specs, demo.POOL, lambda spec: Chatty("breakout", WOMAN, MAN))
     records = list(sim.records)
     model = Captioner([])
     highlights.for_simulation(records, score(records, WOMAN, demo.MEN), WOMAN, demo.PERSONAS, model)

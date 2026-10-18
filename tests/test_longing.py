@@ -12,17 +12,17 @@ TALK, REFLECT = Rung.TALK, Rung.REFLECT
 
 
 def quiet(*names):
-    return {n: Action(REFLECT) for n in names}
+    return [(n, Action(REFLECT)) for n in names]
 
 
 def test_longing_rises_while_apart_after_a_bond_and_falls_when_reunited():
     l = Longing()
-    l.end_of_day({"Mara": Action(TALK, "Ren"), "Ren": Action(TALK, "Mara")})  # bond
+    l.end_of_day({"Mara": Action(TALK, "Ren"), "Ren": Action(TALK, "Mara")}.items())  # bond
     after_bond = l.of("Mara")["Ren"]
     for _ in range(3):
         l.end_of_day(quiet("Mara", "Ren"))  # apart
     apart = l.of("Mara")["Ren"]
-    l.end_of_day({"Mara": Action(TALK, "Ren"), "Ren": Action(REFLECT)})  # together again
+    l.end_of_day({"Mara": Action(TALK, "Ren"), "Ren": Action(REFLECT)}.items())  # together again
     reunited = l.of("Mara")["Ren"]
     assert apart > after_bond
     assert reunited < apart
@@ -38,7 +38,7 @@ def test_no_bond_means_no_longing():
 
 def test_longing_fades_without_new_bonding_eventually_stops_growing():
     l = Longing()
-    l.end_of_day({"Mara": Action(TALK, "Ren")})
+    l.end_of_day({"Mara": Action(TALK, "Ren")}.items())
     levels = []
     for _ in range(40):
         l.end_of_day(quiet("Mara", "Ren"))
@@ -48,7 +48,7 @@ def test_longing_fades_without_new_bonding_eventually_stops_growing():
 
 def test_twins_hear_longing_only_in_words():
     l = Longing()
-    l.end_of_day({"Mara": Action(TALK, "Ren")})
+    l.end_of_day({"Mara": Action(TALK, "Ren")}.items())
     for _ in range(8):
         l.end_of_day(quiet("Mara", "Ren"))
     words = l.describe("Mara")
@@ -66,13 +66,15 @@ class Recording(ScriptedModel):
 
 
 def test_the_engine_passes_longing_to_the_model_and_reports_it():
-    model = Recording({("Mara", 1): Action(TALK, "Ren"), **{("Mara", d): Action(REFLECT) for d in range(2, 7)},
-                       **{("Ren", d): Action(REFLECT) for d in range(1, 7)}})
-    # Same gender, so the Coordinator never assigns them to each other: they really are apart.
-    result = run_world(WorldConfig((Twin("Mara", "f"), Twin("Ren", "f")), max_days=6, seed=2), model)
-    late = [s.longing for who, day, s in model.situations if who == "Mara" and day >= 5]
-    assert any("Ren" in words for words in late)
-    assert result.longing["Mara"]["Ren"] > 0
+    # Mara says hello to whoever she's with; once her first date is over she dates someone else,
+    # and misses the first one.
+    model = Recording({})
+    result = run_world(WorldConfig((Twin("Mara", "f"), Twin("Ren", "m"), Twin("Jun", "m")), max_days=9, seed=2), model)
+    first = next(s.schedule for who, day, s in model.situations if who == "Mara" and day == 1)
+    first_partner = "Ren" if "Ren" in first else "Jun"
+    late = [s.longing for who, day, s in model.situations if who == "Mara" and day >= 6]
+    assert any(first_partner in words for words in late)
+    assert result.longing["Mara"][first_partner] > 0
 
 
 class PromptLog(KeywordModel):

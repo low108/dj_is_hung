@@ -90,3 +90,30 @@ def test_ties_count_as_half_so_no_information_scores_chance():
     tied = {n: (0, 0.0) for n in ranked}
     check = check_answer_key(ranked, frozenset({"A", "B"}), tied)
     assert check.pairs_in_order == 0.5 and not check.matches_on_top
+
+
+def test_a_pool_can_have_fewer_or_more_men_she_did_not_match():
+    app = create_app(MemoryStore())
+    app.state.dates = fake_dates()
+    client = TestClient(app)
+    body = client.post("/simulations", json={"pool_iid": 1, "pool_non_matches": 1, "max_days": 3, "seeds": [0]}).json()
+    assert len(body["ranking"]) == 3 and len(body["answer_key"]["matched"]) == 2  # her 2 matches + 1
+    assert client.post("/simulations", json={"pool_iid": 1, "pool_non_matches": 0}).status_code == 422
+
+
+def test_each_persona_line_says_what_it_is_about():
+    from garden.speed_dating import Memory, about
+
+    assert about(Memory("I am 21 years old.", "age")) == "age"
+    assert about(Memory("I love movies.", "movies")) == "loves"
+    assert about(Memory("I don't care much for art.", "art")) == "not for me"
+    assert about(Memory("In a partner...", "sinc1_1,intel1_1")) == "wants in a partner"
+    assert about(Memory("I think of myself as very fun.", "fun3_1")) == "sees self as"
+
+
+def test_a_real_pool_hands_the_viewer_profiles_and_the_answer_key():
+    app = create_app(MemoryStore())
+    app.state.dates = fake_dates()
+    body = TestClient(app).post("/simulations", json={"pool_iid": 1, "max_days": 3, "seeds": [0]}).json()
+    assert set(body["profiles"]) == set(body["twins"]) and body["matched"] == sorted(body["answer_key"]["matched"])
+    assert all({"text", "about"} <= set(line) for lines in body["profiles"].values() for line in lines)

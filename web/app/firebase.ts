@@ -22,6 +22,8 @@ export function firebaseAuth(): Auth {
 }
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
+// NEXT_PUBLIC_API_URL=static: a site with no API (the free public demo); its data are files shipped with it.
+export const STATIC = API_URL === "static";
 
 /** An API error with its HTTP status (e.g. 404 = "nothing yet"). */
 export class ApiError extends Error {

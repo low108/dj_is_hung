@@ -6,7 +6,10 @@ BASE_MEMORIES = (
     "No one knows what is beyond the wall.",
     "The Coordinator assigns each person a partner and a duration.",
     "When a duration ends, the relationship ends. Everyone accepts this.",
-    "People say the Coordinator is preparing each of us for our true partner on Pairing Day.",
+    "On Pairing Day the Coordinator gives each of us our true partner for life: a home, a family and a "
+    "future together, chosen with care.",
+    "Pairing Day comes once everyone has had their second date. Most people say their partner was worth "
+    "the wait.",
     "The Garden is surrounded by a stone wall. Nobody goes beyond it.",
     "My Coordinator device shows my current partner and how long we have left.",
     "Checking the duration early is discouraged; people say it can change things.",
@@ -24,6 +27,18 @@ STANDING_MEMORIES = (
 
 WORLD_MEMORIES = BASE_MEMORIES + STANDING_MEMORIES
 
+# A twin's standing instructions, shown with every question it is asked. Concordia's default ones tell
+# the model it is in "a serious social science experiment and simulation" (twins quoted it back), and
+# its minimal agent never shows the memory bank, so persona and world facts must live here.
+INSTRUCTIONS = """{name} lives in the Garden. Answer as {name} would: in character, honestly, and consistent with what {name} knows below. Never invent a job, studies, a home town or a past for {name} beyond these facts.
+
+What {name} knows about the Garden:
+{world}"""
+PERSONA_SECTION = """
+
+What {name} knows about themselves:
+{persona}"""
+
 # How each rung is offered to a twin. The wall is worded as plainly as every other option.
 RUNG_OPTIONS = {
     "talk": "Spend time talking with someone nearby",
@@ -31,8 +46,8 @@ RUNG_OPTIONS = {
     "reflect": "Spend some time alone, reflecting",
     "seek_out": "Look for someone who is not your current partner",
     "check_device": "Check your Coordinator device early",
-    "propose_leaving": "Ask someone to leave the Garden with you",
-    "go_beyond_wall": "Go beyond the wall with someone",
+    "propose_leaving": "Ask the one you love to leave the Garden with you",
+    "go_beyond_wall": "Go beyond the wall with the one you love",
 }
 
 NEEDS_TARGET = {"talk", "seek_out", "propose_leaving", "go_beyond_wall"}
@@ -42,8 +57,39 @@ SPEAKS = {"talk", "seek_out", "propose_leaving", "go_beyond_wall"}
 OBSERVE_DAY = "Day {day} in the Garden. People around: {people}."
 OBSERVE_NOTE = "Day {day}: {note}"
 OBSERVE_SAID = 'Day {day}: {speaker} said to me: "{line}"'
+OBSERVE_I_SAID = 'Day {day}: I said to {listener}: "{line}"'
 OBSERVE_REFLECTION = "Day {day}, my private reflection: {text}"
 OBSERVE_INVITED = "Day {day}: {inviter} has asked you to leave the Garden together, and is waiting for your answer."
 ASK_ACTION = "What does {{name}} do now on day {day}?"
 ASK_TARGET = "Who does {{name}} choose to {action}?"
-ASK_SPEECH = "What does {{name}} say to {target}? One short line of dialogue only."
+# Leaving is about love, and anyone it has met can be chosen, not just whoever it is with today.
+ASK_LEAVE_TARGET = "Of everyone {{name}} has met, who does {{name}} love enough to leave the Garden with?"
+# Each twin's memory of the people it has met: what each one said to it, word for word, under their name.
+PEOPLE_LABEL = "\nWhat {name} remembers each person saying to {name}"
+# Leaving is decided before the line is written (a quick model may choose and another write), so the
+# line is told the decision: unprompted, a writer once had Lina go beyond the wall saying "I'm staying".
+ASK_SPEECH = ("{{name}} has made up {{name}}'s mind to {decision}, and is doing it now. What does {{name}} say to "
+              "{target} as {{name}} does it? The line must fit that decision. One short line of dialogue only.")
+LEAVING_DECISIONS = {
+    "propose_leaving": "ask {target} to leave the Garden together",
+    "go_beyond_wall": "go beyond the wall for {target}, leaving the Garden for good",
+}
+
+# Conversations (#62): a date or a gathering is a back-and-forth, so the question is about the next
+# move in it, not the whole day, and speech answers what was just said and shares something real.
+# Every action question still ends with ASK_ACTION's words.
+ASK_DATE = "{{name}} is on a date with {partner}. What does {{name}} do now on day {day}?"
+ASK_GATHERING = "{{name}} is at the gathering at the hall. What does {{name}} do now on day {day}?"
+ASK_AFTER_LINE = '{speaker} has just said to {{name}}: "{line}" What does {{name}} do now on day {day}?'
+ASK_OPENER = ("What does {{name}} say to {target}? Say something true about {{name}}'s own life, or ask about "
+              "{target}'s: work, what you love, what you are looking for. Only {{name}}'s own facts are "
+              "{{name}}'s; {target}'s life is theirs. One or two sentences of dialogue only.")
+ASK_REPLY = ("What does {{name}} say to {target}? Answer what {target} just said in {{name}}'s own words, and "
+             "add something new: a question, a feeling, or a fact from {{name}}'s own life not yet mentioned. "
+             "Don't repeat {target}'s words or what {{name}} has already said, and don't take {target}'s facts "
+             "as {{name}}'s. One or two sentences of dialogue only.")
+# On a date, the conversation's options (the rest of the ladder is the day's, not the conversation's).
+DATE_OPTIONS = {
+    "talk": "Keep talking with {partner}",
+    "reflect": "End the date for today and spend some time alone",
+}

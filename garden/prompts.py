@@ -21,9 +21,12 @@ def prompt_texts() -> dict:
     return {
         "base_memories": list(world_text.BASE_MEMORIES),
         "standing_memories": list(world_text.STANDING_MEMORIES),
+        "instructions": [world_text.INSTRUCTIONS, world_text.PERSONA_SECTION],
         "rung_options": dict(world_text.RUNG_OPTIONS),
         "templates": {k: getattr(world_text, k) for k in (
-            "OBSERVE_DAY", "OBSERVE_NOTE", "OBSERVE_SAID", "OBSERVE_REFLECTION", "OBSERVE_INVITED", "ASK_ACTION", "ASK_TARGET", "ASK_SPEECH")},
+            "OBSERVE_DAY", "OBSERVE_NOTE", "OBSERVE_SAID", "OBSERVE_I_SAID", "OBSERVE_REFLECTION", "OBSERVE_INVITED", "ASK_ACTION", "ASK_TARGET", "ASK_LEAVE_TARGET", "ASK_SPEECH", "PEOPLE_LABEL",
+            "ASK_DATE", "ASK_GATHERING", "ASK_AFTER_LINE", "ASK_OPENER", "ASK_REPLY")},
+        "date_options": dict(world_text.DATE_OPTIONS),
         "reflection_prompt": REFLECTION_PROMPT,
         "reflection_ratings": [RATINGS_WITH_STANDING, RATINGS_WITHOUT_STANDING],
         "choice_hint": CHOICE_HINT,
@@ -31,7 +34,8 @@ def prompt_texts() -> dict:
         "standing_words": sorted({standing.describe(v) for v in range(standing.START + 1)}),
         "longing_words": [words for _, words in LONGING_WORDS],
         "schedule": {k: getattr(coordinator, k) for k in (
-            "SCHEDULE_PAIRED", "SCHEDULE_ONE_DAY", "SCHEDULE_DAYS", "SCHEDULE_UNASSIGNED", "SCHEDULE_GATHERING", "RUMOUR")},
+            "SCHEDULE_PAIRED", "SCHEDULE_ONE_DAY", "SCHEDULE_DAYS", "SCHEDULE_UNASSIGNED", "SCHEDULE_GATHERING", "RUMOUR",
+            "DEVICE_READING", "DEVICE_LAST_DAY", "DEVICE_DAYS", "DEVICE_NO_DATE")},
     }
 
 

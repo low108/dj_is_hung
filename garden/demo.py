@@ -36,7 +36,10 @@ def make_twin_model(spec: RunSpec, personas: dict[str, str] = PERSONAS, fake_sce
     from .concordia_twins import ConcordiaTwins  # heavy import, only for real runs
     from .llm import make_model
 
-    return ConcordiaTwins(make_model(spec.model), personas)
+    from . import memory_bank
+
+    memory = memory_bank.MemoryBankFactory() if memory_bank.enabled() else None  # production only
+    return ConcordiaTwins(make_model(spec.model), personas, memory=memory)
 
 
 def make_highlight_model(models: list[str]):
@@ -62,13 +65,13 @@ def make_followup_model():
     return make_model(spec or f"gemini:{FLASH}", attempts=2)  # a user is waiting on the page
 
 
-def with_her_twin(alias: str, persona: str, threshold: float):
+def with_her_twin(alias: str, persona: str):
     """The demo pool's men with a user's own twin as the woman (D4); see twin_builder.garden_inputs."""
     from .pools import PoolSetup
 
     men = tuple(t for t in POOL if t.alias != WOMAN)
     personas = {t.alias: PERSONAS[t.alias] for t in men} | {alias: persona}
-    return PoolSetup((Twin(alias, "f"), *men), personas, alias, MEN, None, ((alias, threshold),))
+    return PoolSetup((Twin(alias, "f"), *men), personas, alias, MEN, None)
 
 
 def make_extraction_model():

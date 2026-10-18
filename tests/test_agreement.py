@@ -17,7 +17,7 @@ def run(monkeypatch, by_model=BY_MODEL):
 
     monkeypatch.setattr(demo, "make_twin_model", per_model)
     return TestClient(create_app(MemoryStore())).post(
-        "/simulations", json={"models": list(by_model), "seeds": [0, 1], "max_days": 6}).json()
+        "/simulations", json={"models": list(by_model), "seeds": [0, 1], "max_days": 40}).json()
 
 
 def test_every_model_in_the_ensemble_runs_and_each_run_records_its_model(monkeypatch):
@@ -30,9 +30,9 @@ def test_every_model_in_the_ensemble_runs_and_each_run_records_its_model(monkeyp
 def test_each_model_is_compared_with_the_other_models(monkeypatch):
     sim = run(monkeypatch)
     ren = next(a for a in sim["agreement"] if a["candidate"] == demo.MAN)
-    assert ren["verdict"] == "high"
-    assert ren["by_model"] == {"fake:a": "high", "fake:b": None, "fake:c": "high"}
-    # a and c each match the others pooled (which include a breakout); b says never, the others say high.
+    assert ren["verdict"] == agreement.CHOSE
+    assert ren["by_model"] == {"fake:a": agreement.CHOSE, "fake:b": None, "fake:c": agreement.CHOSE}
+    # a and c each match the others pooled (which include a breakout); b says never, the others chose him.
     assert (ren["agree"], ren["models"]) == (2, 3)
     jun = next(a for a in sim["agreement"] if a["candidate"] == "Jun")
     assert jun["verdict"] is None and (jun["agree"], jun["models"]) == (3, 3)  # all agree: never

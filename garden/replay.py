@@ -19,7 +19,7 @@ from .feed import FeedCursor
 from .paths import DATA_DIR
 
 DEFAULT_DIR = DATA_DIR / "replays"
-SUMMARY_FIELDS = ("sim_id", "run_id", "model", "price", "seed", "scenario", "featured", "outcome", "day",
+SUMMARY_FIELDS = ("sim_id", "run_id", "model", "seed", "scenario", "featured", "outcome", "day",
                   "pair", "created_at")
 
 
@@ -29,7 +29,11 @@ def outcome_fields(res: RunResult) -> dict:
         "outcome": res.outcome.value,
         "day": res.day,
         "pair": list(res.pair) if res.pair else None,
+        "wall_opened": res.wall_opened,
         "unrequited": [{"day": a.day, "twin": a.twin, "target": a.target} for a in res.unrequited],
+        "flagged": res.flagged,  # a twin kept slipping out of character: kept, but not scored (#64)
+        "slips": len(res.slips),
+        "line_redos": len(res.redos),  # lines asked again for being empty or an echo
         "breach": ({"day": res.breach.day, "twin": res.breach.twin, "phrase": res.breach.phrase,
                     "text": res.breach.text} if res.breach else None),
     }
@@ -82,9 +86,12 @@ class SimulationInfo:
 
     sim_id: str
     twins: list[str]
+    woman: str           # her twin: the viewer follows her days
     scenario: str | None  # the fake-model scenario; None for real models
     featured_run: str | None
     created_at: str      # the simulation's, so its runs sort together in the picker
+    profiles: dict[str, list[dict]] | None = None  # each twin's persona, for the viewer's profile cards
+    matched: list[str] | None = None  # her real matches (the answer key), when the pool has one
 
 
 def replay_of(info: SimulationInfo, record: RunRecord, recorder: Recorder) -> dict | None:
@@ -93,10 +100,11 @@ def replay_of(info: SimulationInfo, record: RunRecord, recorder: Recorder) -> di
         return None
     spec = record.spec
     return {
-        "sim_id": info.sim_id, "run_id": spec.run_id, "model": spec.model, "price": spec.price.value,
+        "sim_id": info.sim_id, "run_id": spec.run_id, "model": spec.model,
         "seed": spec.seed, "scenario": info.scenario, "featured": spec.run_id == info.featured_run,
         **outcome_fields(record.result), "created_at": info.created_at,
-        "twins": info.twins, "events": recorder.events, "twin_states": recorder.twin_states,
+        "twins": info.twins, "woman": info.woman, "events": recorder.events, "twin_states": recorder.twin_states,
+        "profiles": info.profiles or {}, "matched": info.matched,
     }
 
 
